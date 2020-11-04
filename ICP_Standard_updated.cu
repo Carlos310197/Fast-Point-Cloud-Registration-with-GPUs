@@ -14,11 +14,11 @@
 //#include <device_functions.h>
 
 //constants
-#define WIDTH 20
+#define WIDTH 10
 #define NUM_POINTS WIDTH*WIDTH //width of grid
 #define XY_min -2.0
 #define XY_max 2.0
-#define MAX_ITER 30
+#define MAX_ITER 2
 
 void dmatrixMul(double* A, double* B, double* C, int m, int n, int k);
 void print_cloud(double* cloud, int num_points, int points2show);
@@ -29,15 +29,18 @@ __global__
 void Matching(double* Dt, double* M, int m, int* idx)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	double min = 100000;
-	double d;
-	for (int j = 0; j < m; j++)
+	if(i < NUM_POINTS)
 	{
-		d = sqrt(pow((Dt[0 + i * 3] - M[0 + j * 3]), 2) + pow((Dt[1 + i * 3] - M[1 + j * 3]), 2) + pow((Dt[2 + i * 3] - M[2 + j * 3]), 2));
-		if (d < min)
+		double min = 100000;
+		double d;
+		for (int j = 0; j < m; j++)
 		{
-			min = d;
-			idx[i] = j;
+			d = sqrt(pow((Dt[0 + i * 3] - M[0 + j * 3]), 2) + pow((Dt[1 + i * 3] - M[1 + j * 3]), 2) + pow((Dt[2 + i * 3] - M[2 + j * 3]), 2));
+			if (d < min)
+			{
+				min = d;
+				idx[i] = j;
+			}
 		}
 	}
 }
@@ -49,15 +52,18 @@ void centr_dev(double* D, double* M, int* idx, double* barD, double* barM, doubl
 
 	int size = blockDim.x * gridDim.x;
 
-	//copy D cloud to devD
-	devD[0 + i * 3] = D[0 + i * 3];
-	devD[1 + i * 3] = D[1 + i * 3];
-	devD[2 + i * 3] = D[2 + i * 3];
+	if(i < NUM_POINTS)
+	{
+		//copy D cloud to devD
+		devD[0 + i * 3] = D[0 + i * 3];
+		devD[1 + i * 3] = D[1 + i * 3];
+		devD[2 + i * 3] = D[2 + i * 3];
 
-	//copy M cloud to devM using the correspondence(idx)
-	devM[0 + i * 3] = M[0 + idx[i] * 3];
-	devM[1 + i * 3] = M[1 + idx[i] * 3];
-	devM[2 + i * 3] = M[2 + idx[i] * 3];
+		//copy M cloud to devM using the correspondence(idx)
+		devM[0 + i * 3] = M[0 + idx[i] * 3];
+		devM[1 + i * 3] = M[1 + idx[i] * 3];
+		devM[2 + i * 3] = M[2 + idx[i] * 3];
+	}
 	__syncthreads();
 
 	for (int s = 1; s <= size; s *= 2)//parallel reduction
@@ -79,27 +85,34 @@ void centr_dev(double* D, double* M, int* idx, double* barD, double* barM, doubl
 
 	if (i >= 0 && i <= 2)
 	{
-		barD[i] = devD[i] / size;
-		barM[i] = devM[i] / size;
+		barD[i] = devD[i] / NUM_POINTS;
+		barM[i] = devM[i] / NUM_POINTS;
+		printf("barM[%d]: %lf\n",i,barD[i]);
 	}
 	__syncthreads();
 
-	devD[0 + i * 3] = D[0 + i * 3] - barD[0];
-	devD[1 + i * 3] = D[1 + i * 3] - barD[1];
-	devD[2 + i * 3] = D[2 + i * 3] - barD[2];
+	if(i < NUM_POINTS)
+	{
+		devD[0 + i * 3] = D[0 + i * 3] - barD[0];
+		devD[1 + i * 3] = D[1 + i * 3] - barD[1];
+		devD[2 + i * 3] = D[2 + i * 3] - barD[2];
 
-	devM[0 + i * 3] = M[0 + idx[i] * 3] - barM[0];
-	devM[1 + i * 3] = M[1 + idx[i] * 3] - barM[1];
-	devM[2 + i * 3] = M[2 + idx[i] * 3] - barM[2];
+		devM[0 + i * 3] = M[0 + idx[i] * 3] - barM[0];
+		devM[1 + i * 3] = M[1 + idx[i] * 3] - barM[1];
+		devM[2 + i * 3] = M[2 + idx[i] * 3] - barM[2];
+	}
 }
 
 __global__
 void repmat(double* vector, double* matrix)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	matrix[0 + i * 3] = vector[0];
-	matrix[1 + i * 3] = vector[1];
-	matrix[2 + i * 3] = vector[2];
+	if(i < NUM_POINTS)
+	{
+		matrix[0 + i * 3] = vector[0];
+		matrix[1 + i * 3] = vector[1];
+		matrix[2 + i * 3] = vector[2];
+	}
 }
 
 __global__
@@ -109,9 +122,12 @@ void Error(double* aux, double* D, double* M, int* idx, double* error, int itera
 
 	int size = blockDim.x * gridDim.x;
 
-	aux[0 + i * 3] = pow(M[0 + idx[i] * 3]-D[0 + i * 3],2);
-	aux[1 + i * 3] = pow(M[1 + idx[i] * 3]-D[1 + i * 3],2);
-	aux[2 + i * 3] = pow(M[2 + idx[i] * 3]-D[2 + i * 3],2);
+	if(i < NUM_POINTS)
+	{
+		aux[0 + i * 3] = pow(M[0 + idx[i] * 3]-D[0 + i * 3],2);
+		aux[1 + i * 3] = pow(M[1 + idx[i] * 3]-D[1 + i * 3],2);
+		aux[2 + i * 3] = pow(M[2 + idx[i] * 3]-D[2 + i * 3],2);
+	}
 	__syncthreads();
 
 	for (int s = 1; s <= size; s *= 2)//parallel reduction
@@ -125,7 +141,7 @@ void Error(double* aux, double* D, double* M, int* idx, double* error, int itera
 		__syncthreads();
 	}
 
-	if (i == 0) error[iteration] = sqrt( (aux[0] + aux[1] + aux[2]) / size);
+	if (i == 0) error[iteration] = sqrt( (aux[0] + aux[1] + aux[2]) / NUM_POINTS);
 }
 
 int main()
@@ -139,8 +155,8 @@ int main()
 	num_points = WIDTH * WIDTH;//number of points
 	lenght = XY_max - XY_min;
 
-	size_t bytesD = num_points * 3 * sizeof(double);
-	size_t bytesM = num_points * 3 * sizeof(double);
+	size_t bytesD = NUM_POINTS * 3 * sizeof(double);
+	size_t bytesM = NUM_POINTS * 3 * sizeof(double);
 
 	//create an array with all points equally separated
 	int n = WIDTH;
@@ -233,9 +249,9 @@ int main()
 	print_cloud(h_r,3,3);*/
 
 	//h_M = h_r*h_D
-	dmatrixMul(h_r, h_D, h_M, 3, num_points, 3);
+	dmatrixMul(h_r, h_D, h_M, 3, NUM_POINTS, 3);
 	//h_M = h_M + t
-	for (i = 0; i < num_points; i++)
+	for (i = 0; i < NUM_POINTS; i++)
 	{
 		for (j = 0; j < 3; j++)
 		{
@@ -253,7 +269,7 @@ int main()
 
 	int D_size = NUM_POINTS;//data cloud number of points
 	int M_size = NUM_POINTS;//model cloud number of points
-	
+
 	double* d_M = NULL;//model cloud (device)
 	double* d_Dt = NULL;//data cloud transformed (device)
 	
@@ -296,10 +312,23 @@ int main()
 	cudaMalloc(&d_barM, 3 * sizeof(double));
 	cudaMemset(d_barD, 0, 3 * sizeof(double));
 	cudaMemset(d_barM, 0, 3 * sizeof(double));
-	cudaMalloc(&d_devD, bytesD);
-	cudaMalloc(&d_devM, bytesD);
-	cudaMemset(d_devD, 0, bytesD);
-	cudaMemset(d_devM, 0, bytesD);
+
+	//n gets the nearest greater power of 2
+	n = 0;
+    int q = round(log2(NUM_POINTS));
+    if(q % 2 == 0)
+    {
+        n = 1 << q;
+        if(n < NUM_POINTS) n = 1 << (q+2);
+    }
+	else n = 1 << (q+1);
+
+	cudaMalloc(&d_devD, 3*n*sizeof(double));
+	cudaMalloc(&d_devM, 3*n*sizeof(double));
+	cudaMemset(d_devD, 0, 3*n*sizeof(double));
+	cudaMemset(d_devM, 0, 3*n*sizeof(double));
+
+	//double *h_Dt = (double*)malloc(3*n*sizeof(double));
 	
 	double* h_barD, * h_barM;
 	double* h_devD, * h_devM;
@@ -326,7 +355,7 @@ int main()
 	cudaMemset(d_error, 0, MAX_ITER * sizeof(double));
 	h_error = (double*)malloc(MAX_ITER * sizeof(double));
 
-	cudaError_t err;
+	cudaError_t err;//for checking errors in kernels
 
 	//printf("Here starts the main loop!\n");
 	cudaEvent_t start, stop;
@@ -335,8 +364,12 @@ int main()
 	int iteration = 0;
 	cudaEventRecord(start);
 	//MAIN LOOP
-	int GridSize = WIDTH;
-	int BlockSize = WIDTH;
+
+	int factor = 16;
+	int GridSize = factor;
+	int BlockSize = n/factor;
+	printf("Grid Size: %d, Block Size: %d\n",GridSize,BlockSize);
+
 	while (iteration < MAX_ITER)
 	{
 		/////////////////matching step/////////////////
@@ -357,9 +390,9 @@ int main()
 		if (err != cudaSuccess)
 			printf("Error in centroid kernel: %s\n", cudaGetErrorString(err));
 		cudaDeviceSynchronize();
-		/*cudaMemcpy(h_D, d_devD, bytesD, cudaMemcpyDeviceToHost);
+		/*cudaMemcpy(h_D, d_devD, 3*n*sizeof(double), cudaMemcpyDeviceToHost);
 		printf("D dev:\n");
-		print_cloud(h_D, D_size, 20);*/
+		print_cloud(h_D, n, n);*/
 
 		/*cudaMemcpy(h_barD, d_barD, 3*sizeof(double), cudaMemcpyDeviceToHost);
 		cudaMemcpy(h_barM, d_barM, 3*sizeof(double), cudaMemcpyDeviceToHost);
@@ -407,6 +440,7 @@ int main()
 		/////////////////end of transformation step/////////////////
 
 		//Error
+		cudaMemset(d_devD, 0, 3 * n * sizeof(double));
 		Error <<<GridSize, BlockSize>>> (d_devD, d_Dt, d_M, d_idx, d_error, iteration);
 		err = cudaGetLastError();
 		if (err != cudaSuccess)
