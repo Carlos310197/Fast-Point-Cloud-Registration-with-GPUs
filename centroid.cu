@@ -27,7 +27,7 @@ void Centroid(float* cloud, int n, float* bar)
 
 int main(void)
 {
-    int NUM_POINTS = 1<<10;
+    int NUM_POINTS = 1<<9;//512 points
     float* h_cloud, *d_cloud;
     float* h_bar, *d_bar;
 
