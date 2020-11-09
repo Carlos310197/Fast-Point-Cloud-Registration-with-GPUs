@@ -20,22 +20,22 @@
 #define XY_max 2.0
 #define MAX_ITER 2
 
-void dmatrixMul(double* A, double* B, double* C, int m, int n, int k);
-void print_cloud(double* cloud, int num_points, int points2show);
-void print_darray(double* array, int points2show);
-void print_iarray(int* array, int points2show);
+void SmatrixMul(float* A, float* B, float* C, int m, int n, int k);
+void printScloud(float* cloud, int num_points, int points2show);
+void printSarray(float* array, int points2show);
+void printIarray(int* array, int points2show);
 
 __global__
-void Matching(double* Dt, double* M, int m, int* idx)
+void Matching(float* Dt, float* M, int m, int* idx)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	if(i < NUM_POINTS)
+	if (i < NUM_POINTS)
 	{
-		double min = 100000;
-		double d;
+		float min = 100000;
+		float d;
 		for (int j = 0; j < m; j++)
 		{
-			d = sqrt(pow((Dt[0 + i * 3] - M[0 + j * 3]), 2) + pow((Dt[1 + i * 3] - M[1 + j * 3]), 2) + pow((Dt[2 + i * 3] - M[2 + j * 3]), 2));
+			d = (float)sqrt(pow((Dt[0 + i * 3] - M[0 + j * 3]), 2) + pow((Dt[1 + i * 3] - M[1 + j * 3]), 2) + pow((Dt[2 + i * 3] - M[2 + j * 3]), 2));
 			if (d < min)
 			{
 				min = d;
@@ -46,13 +46,13 @@ void Matching(double* Dt, double* M, int m, int* idx)
 }
 
 __global__
-void centr_dev(double* D, double* M, int* idx, double* barD, double* barM, double* devD, double* devM)
+void centr_dev(float* D, float* M, int* idx, float* barD, float* barM, float* devD, float* devM)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 
 	int size = blockDim.x * gridDim.x;
 
-	if(i < NUM_POINTS)
+	if (i < NUM_POINTS)
 	{
 		//copy D cloud to devD
 		devD[0 + i * 3] = D[0 + i * 3];
@@ -82,16 +82,16 @@ void centr_dev(double* D, double* M, int* idx, double* barD, double* barM, doubl
 		}
 		__syncthreads();
 	}
-
+	
 	if (i >= 0 && i <= 2)
 	{
 		barD[i] = devD[i] / NUM_POINTS;
 		barM[i] = devM[i] / NUM_POINTS;
-		printf("barM[%d]: %lf\n",i,barD[i]);
+		printf("barM[%d]: %lf\n", i, barD[i]);
 	}
 	__syncthreads();
 
-	if(i < NUM_POINTS)
+	if (i < NUM_POINTS)
 	{
 		devD[0 + i * 3] = D[0 + i * 3] - barD[0];
 		devD[1 + i * 3] = D[1 + i * 3] - barD[1];
@@ -104,10 +104,10 @@ void centr_dev(double* D, double* M, int* idx, double* barD, double* barM, doubl
 }
 
 __global__
-void repmat(double* vector, double* matrix)
+void repmat(float* vector, float* matrix)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	if(i < NUM_POINTS)
+	if (i < NUM_POINTS)
 	{
 		matrix[0 + i * 3] = vector[0];
 		matrix[1 + i * 3] = vector[1];
@@ -116,17 +116,17 @@ void repmat(double* vector, double* matrix)
 }
 
 __global__
-void Error(double* aux, double* D, double* M, int* idx, double* error, int iteration)
+void Error(float* aux, float* D, float* M, int* idx, float* error, int iteration)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 
 	int size = blockDim.x * gridDim.x;
 
-	if(i < NUM_POINTS)
+	if (i < NUM_POINTS)
 	{
-		aux[0 + i * 3] = pow(M[0 + idx[i] * 3]-D[0 + i * 3],2);
-		aux[1 + i * 3] = pow(M[1 + idx[i] * 3]-D[1 + i * 3],2);
-		aux[2 + i * 3] = pow(M[2 + idx[i] * 3]-D[2 + i * 3],2);
+		aux[0 + i * 3] = pow(M[0 + idx[i] * 3] - D[0 + i * 3], 2);
+		aux[1 + i * 3] = pow(M[1 + idx[i] * 3] - D[1 + i * 3], 2);
+		aux[2 + i * 3] = pow(M[2 + idx[i] * 3] - D[2 + i * 3], 2);
 	}
 	__syncthreads();
 
@@ -141,7 +141,7 @@ void Error(double* aux, double* D, double* M, int* idx, double* error, int itera
 		__syncthreads();
 	}
 
-	if (i == 0) error[iteration] = sqrt( (aux[0] + aux[1] + aux[2]) / NUM_POINTS);
+	if (i == 0) error[iteration] = sqrt((aux[0] + aux[1] + aux[2]) / NUM_POINTS);
 }
 
 int main()
@@ -234,9 +234,9 @@ int main()
 	/*double h_r[9] = {};
 	dmatrixMul(h_rx, h_ry, h_r, 3, 3, 3);
 	dmatrixMul(h_r, h_rz, h_r, 3, 3, 3);*/
-	float h_r[9] = {0.876485812,-0.37591464,0.300767018,
+	float h_r[9] = { 0.876485812,-0.37591464,0.300767018,
 			-0.04386084,0.559789799,0.827473024,
-			-0.47942553,-0.73846026,0.474159881};
+			-0.47942553,-0.73846026,0.474159881 };
 
 	//h_M = h_r*h_D
 	dmatrixMul(h_r, h_D, h_M, 3, NUM_POINTS, 3);
@@ -262,13 +262,13 @@ int main()
 
 	float* d_M = NULL;//model cloud (device)
 	float* d_Dt = NULL;//data cloud transformed (device)
-	
+
 	int* d_idx = NULL;//index vector (used for correspondence)
 	int* h_idx = NULL;//index vector (used for correspondence)
-	
+
 	float* d_barD = NULL, * d_barM = NULL;//centroids (device)
 	float* d_devD = NULL, * d_devM = NULL;//deviations (device)
-	
+
 	float* d_W = NULL;//3x3 matrix used in SVD
 	float* d_S = NULL;
 	float* d_U = NULL;
@@ -308,8 +308,8 @@ int main()
 	cudaMemset(d_devD, 0, bytesD);
 	cudaMemset(d_devM, 0, bytesD);
 
-	//double *h_Dt = (double*)malloc(3*n*sizeof(double));
-	
+	//float *h_Dt = (float*)malloc(3*n*sizeof(float));
+
 	float* h_barD, * h_barM;
 	float* h_devD, * h_devM;
 	h_barD = (float*)malloc(3 * sizeof(float));
@@ -347,13 +347,13 @@ int main()
 
 	int factor = 16;
 	int GridSize = factor;
-	int BlockSize = n/factor;
-	printf("Grid Size: %d, Block Size: %d\n",GridSize,BlockSize);
+	int BlockSize = n / factor;
+	printf("Grid Size: %d, Block Size: %d\n", GridSize, BlockSize);
 
 	while (iteration < MAX_ITER)
 	{
 		/////////////////matching step/////////////////
-		Matching<<<GridSize,BlockSize>>>(d_Dt, d_M, M_size, d_idx);
+		Matching << <GridSize, BlockSize >> > (d_Dt, d_M, M_size, d_idx);
 		err = cudaGetLastError();
 		if (err != cudaSuccess)
 			printf("Error in matching kernel: %s\n", cudaGetErrorString(err));
@@ -365,7 +365,7 @@ int main()
 
 		/////////////////minimization step/////////////////
 		//cudaMemcpy(d_devD, d_Dt, bytesD, cudaMemcpyDeviceToDevice);
-		centr_dev<<<GridSize,BlockSize>>>(d_Dt, d_M, d_idx, d_barD, d_barM, d_devD, d_devM);
+		centr_dev << <GridSize, BlockSize >> > (d_Dt, d_M, d_idx, d_barD, d_barM, d_devD, d_devM);
 		err = cudaGetLastError();
 		if (err != cudaSuccess)
 			printf("Error in centroid kernel: %s\n", cudaGetErrorString(err));
@@ -383,45 +383,45 @@ int main()
 
 		//d_W = d_devM * d_devD(t)
 		alpha = 1; beta = 0;
-		cublasDgemm(handle, CUBLAS_OP_N, CUBLAS_OP_T, 3, 3, D_size,
+		cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_T, 3, 3, D_size,
 			&alpha, d_devM, 3, d_devD, 3, &beta, d_W, 3);
 
 		//SVD
 		//d_W = d_U * d_S * d_VT
-		cusolverDnDgesvd(cusolverH, 'A', 'A', 3, 3, d_W, 3, d_S, d_U, 3, d_VT, 3,
+		cusolverDnSgesvd(cusolverH, 'A', 'A', 3, 3, d_W, 3, d_S, d_U, 3, d_VT, 3,
 			d_work, lwork, d_rwork, devInfo);
 
 		//Calculate the temporary rotation matrix (d_temp_r)
 		//R = U*Vt
 		alpha = 1; beta = 0;
-		cublasDgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, 3, 3, 3,
+		cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, 3, 3, 3,
 			&alpha, d_U, 3, d_VT, 3, &beta, d_temp_r, 3);
 
 		//T = uM - R*uD
 		alpha = -1; beta = 1;
-		cublasDgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, 3, 1, 3,
+		cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, 3, 1, 3,
 			&alpha, d_temp_r, 3, d_barD, 3, &beta, d_barM, 3);
-		cublasDcopy(handle, 3, d_barM, 1, d_temp_T, 1);//copy the result to d_temp_T
+		cublasScopy(handle, 3, d_barM, 1, d_temp_T, 1);//copy the result to d_temp_T
 		/////////////////end of minimization/////////////////
 
 		/////////////////transformation step/////////////////
 
 		//D = R * D + T
-		repmat <<<GridSize, BlockSize>>> (d_temp_T, rep_T);
+		repmat << <GridSize, BlockSize >> > (d_temp_T, rep_T);
 		err = cudaGetLastError();
 		if (err != cudaSuccess)
 			printf("Error in repmat kernel: %s\n", cudaGetErrorString(err));
 		cudaDeviceSynchronize();
 		alpha = 1; beta = 1;
-		cublasDgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, 3, D_size, 3,
+		cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, 3, D_size, 3,
 			&alpha, d_temp_r, 3, d_Dt, 3, &beta, rep_T, 3);
-		cublasDcopy(handle, 3 * D_size, rep_T, 1, d_Dt, 1);
+		cublasScopy(handle, 3 * D_size, rep_T, 1, d_Dt, 1);
 
 		/////////////////end of transformation step/////////////////
 
 		//Error
 		cudaMemset(d_devD, 0, 3 * n * sizeof(double));
-		Error <<<GridSize, BlockSize>>> (d_devD, d_Dt, d_M, d_idx, d_error, iteration);
+		Error << <GridSize, BlockSize >> > (d_devD, d_Dt, d_M, d_idx, d_error, iteration);
 		err = cudaGetLastError();
 		if (err != cudaSuccess)
 			printf("Error in error kernel: %s\n", cudaGetErrorString(err));
@@ -438,7 +438,7 @@ int main()
 
 	cudaMemcpy(h_error, d_error, MAX_ITER * sizeof(double), cudaMemcpyDeviceToHost);
 	printf("Error:\n");
-	print_darray(h_error, iteration);
+	printSarray(h_error, iteration);
 
 	printf("Elapsed time: %f ms\n", milliseconds);
 
@@ -451,23 +451,23 @@ int main()
 }
 
 //double matrix multiplication
-void dmatrixMul(double* A, double* B, double* C, int m, int n, int k)
+void SmatrixMul(float* A, float* B, float* C, int m, int n, int k)
 {
 	int i, j, q;
-	double temp = 0.0;
+	float temp = 0.0f;
 	for (i = 0; i < n; i++)
 	{
 		for (j = 0; j < m; j++)
 		{
 			temp = 0.0f;
 			for (q = 0; q < k; q++) temp += A[j + q * m] * B[q + i * k];
-			C[j + i * m] = (double)temp;
+			C[j + i * m] = (float)temp;
 		}
 	}
 }
 
 //print matrix
-void print_cloud(double* cloud, int num_points, int points2show)//
+void printScloud(float* cloud, int num_points, int points2show)
 {
 	int i, j, offset;
 	printf("x\ty\tz\n");
@@ -487,7 +487,7 @@ void print_cloud(double* cloud, int num_points, int points2show)//
 }
 
 //print vector with double values
-void print_darray(double* array, int points2show)
+void printSarray(float* array, int points2show)
 {
 	int i;
 	for (i = 0; i < points2show; i++)
@@ -498,7 +498,7 @@ void print_darray(double* array, int points2show)
 }
 
 //print vector with integer values
-void print_iarray(int* array, int points2show)
+void printIarray(int* array, int points2show)
 {
 	int i;
 	for (i = 0; i < points2show; i++)
