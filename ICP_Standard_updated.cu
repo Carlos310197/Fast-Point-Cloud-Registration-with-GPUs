@@ -18,7 +18,7 @@
 #define NUM_POINTS WIDTH*WIDTH //width of grid (1024 points)
 #define XY_min -2.0
 #define XY_max 2.0
-#define MAX_ITER 30
+#define MAX_ITER 40
 
 void SmatrixMul(float* A, float* B, float* C, int m, int n, int k);
 void printScloud(float* cloud, int num_points, int points2show);
@@ -78,19 +78,27 @@ void centr_dev(float* D, float* M, int* idx, float* barD, float* barM, float* de
 		}
 		__syncthreads();
 	}
-	
+
 	if (i >= 0 && i <= 2)
 	{
-		barD[i] = devD[i]/n;
-		barM[i] = devM[i]/n;
+		barD[i] = devD[i] / n;
+		barM[i] = devM[i] / n;
 		//printf("barM[%d]: %f\n", i, barM[0]);
 		//printf("Num points: %d\n",NUM_POINTS);
 	}
-	//__syncthreads();
+	/*__syncthreads();
+
+	devD[0 + i * 3] = D[0 + i * 3] - barD[0];
+	devD[1 + i * 3] = D[1 + i * 3] - barD[1];
+	devD[2 + i * 3] = D[2 + i * 3] - barD[2];
+
+	devM[0 + i * 3] = M[0 + idx[i] * 3] - barM[0];
+	devM[1 + i * 3] = M[1 + idx[i] * 3] - barM[1];
+	devM[2 + i * 3] = M[2 + idx[i] * 3] - barM[2];*/
 }
 
 __global__
-void dev(float *D, float *M, int *idx, float* barD, float*barM ,float *devD, float *devM)
+void dev(float* D, float* M, int* idx, float* barD, float* barM, float* devD, float* devM)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	devD[0 + i * 3] = D[0 + i * 3] - barD[0];
@@ -119,7 +127,7 @@ void Error(float* aux, float* D, float* M, int* idx, float* error, int iteration
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int n = NUM_POINTS;
-	
+
 	aux[0 + i * 3] = pow(M[0 + idx[i] * 3] - D[0 + i * 3], 2);
 	aux[1 + i * 3] = pow(M[1 + idx[i] * 3] - D[1 + i * 3], 2);
 	aux[2 + i * 3] = pow(M[2 + idx[i] * 3] - D[2 + i * 3], 2);
@@ -237,7 +245,6 @@ int main()
 	printScloud(h_ry,3,3);
 	printf("Rz matrix:\n");
 	printScloud(h_rz,3,3);
-
 	SmatrixMul(h_rx, h_ry, h_r, 3, 3, 3);
 	printf("Rx*Ry matrix:\n");
 	printScloud(h_r,3,3);
@@ -354,7 +361,7 @@ int main()
 
 	//printf("Here starts the main loop!\n");
 	int GridSize = 8;
-	int BlockSize = NUM_POINTS/GridSize;
+	int BlockSize = NUM_POINTS / GridSize;
 	printf("Grid Size: %d, Block Size: %d\n", GridSize, BlockSize);
 
 	cublasStatus_t cublas_error;
@@ -381,13 +388,13 @@ int main()
 
 		/////////////////minimization step/////////////////
 		//cudaMemcpy(d_devD, d_Dt, bytesD, cudaMemcpyDeviceToDevice);
-		centr_dev <<<GridSize, BlockSize >>> (d_Dt, d_M, d_idx, d_barD, d_barM, d_devD, d_devM);
+		centr_dev << <GridSize, BlockSize >> > (d_Dt, d_M, d_idx, d_barD, d_barM, d_devD, d_devM);
 		err = cudaGetLastError();
 		if (err != cudaSuccess)
 			printf("Error in centroid kernel: %s\n", cudaGetErrorString(err));
 		cudaDeviceSynchronize();
 
-		dev <<<GridSize, BlockSize >>> (d_Dt, d_M, d_idx, d_barD, d_barM ,d_devD, d_devM);
+		dev <<<GridSize, BlockSize>>> (d_Dt, d_M, d_idx, d_barD, d_barM, d_devD, d_devM);
 		err = cudaGetLastError();
 		if (err != cudaSuccess)
 			printf("Error in deviation kernel: %s\n", cudaGetErrorString(err));
@@ -400,12 +407,12 @@ int main()
 		printf("M dev:\n");
 		printScloud(h_D, NUM_POINTS, NUM_POINTS);*/
 
-		cudaMemcpy(h_barD, d_barD, 3 * sizeof(float), cudaMemcpyDeviceToHost);
+		/*cudaMemcpy(h_barD, d_barD, 3 * sizeof(float), cudaMemcpyDeviceToHost);
 		cudaMemcpy(h_barM, d_barM, 3 * sizeof(float), cudaMemcpyDeviceToHost);
 		printf("D centroid:\n");
 		printSarray(h_barD, 3);
 		printf("M centroid:\n");
-		printSarray(h_barM, 3);
+		printSarray(h_barM, 3);*/
 
 		//d_W = d_devM * d_devD(t)
 		alpha = 1; beta = 0;
@@ -413,10 +420,10 @@ int main()
 			&alpha, d_devM, 3, d_devD, 3, &beta, d_W, 3);
 		if (cublas_error != CUBLAS_STATUS_SUCCESS)
 			printf("Error in W:  %s\n", cudaGetErrorString(err));
-		
-		cudaMemcpy(h_W, d_W, 9 * sizeof(float), cudaMemcpyDeviceToHost);
+
+		/*cudaMemcpy(h_W, d_W, 9 * sizeof(float), cudaMemcpyDeviceToHost);
 		printf("W:\n");
-		printScloud(h_W,3,3);
+		printScloud(h_W, 3, 3);*/
 
 		//SVD
 		//d_W = d_U * d_S * d_VT
