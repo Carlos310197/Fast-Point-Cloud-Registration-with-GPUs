@@ -46,7 +46,7 @@ void Matching(float* Dt, float* M, int m, int* idx)
 }
 
 __global__
-void centr_dev(float* D, float* M, int* idx, float* barD, float* barM, float* devD, float* devM)
+void centroid(float* D, float* M, int* idx, float* barD, float* barM, float* devD, float* devM)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int n = NUM_POINTS;
@@ -98,7 +98,7 @@ void centr_dev(float* D, float* M, int* idx, float* barD, float* barM, float* de
 }
 
 __global__
-void dev(float* D, float* M, int* idx, float* barD, float* barM, float* devD, float* devM)
+void deviation(float* D, float* M, int* idx, float* barD, float* barM, float* devD, float* devM)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	devD[0 + i * 3] = D[0 + i * 3] - barD[0];
@@ -388,13 +388,13 @@ int main()
 
 		/////////////////minimization step/////////////////
 		//cudaMemcpy(d_devD, d_Dt, bytesD, cudaMemcpyDeviceToDevice);
-		centr_dev << <GridSize, BlockSize >> > (d_Dt, d_M, d_idx, d_barD, d_barM, d_devD, d_devM);
+		centroid << <GridSize, BlockSize >> > (d_Dt, d_M, d_idx, d_barD, d_barM, d_devD, d_devM);
 		err = cudaGetLastError();
 		if (err != cudaSuccess)
 			printf("Error in centroid kernel: %s\n", cudaGetErrorString(err));
 		cudaDeviceSynchronize();
 
-		dev <<<GridSize, BlockSize>>> (d_Dt, d_M, d_idx, d_barD, d_barM, d_devD, d_devM);
+		deviation <<<GridSize, BlockSize>>> (d_Dt, d_M, d_idx, d_barD, d_barM, d_devD, d_devM);
 		err = cudaGetLastError();
 		if (err != cudaSuccess)
 			printf("Error in deviation kernel: %s\n", cudaGetErrorString(err));
