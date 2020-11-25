@@ -55,7 +55,7 @@ void centroid(float* D, float* M, int* idx, float* barD, float* barM, float* dev
 	devD[1 + i * 3] = D[1 + i * 3];
 	devD[2 + i * 3] = D[2 + i * 3];
 
-	//copy M cloud to devM using the correspondence(idx)
+	//copy M cloud to devM using the correspondence found in the matching step(idx)
 	devM[0 + i * 3] = M[0 + idx[i] * 3];
 	devM[1 + i * 3] = M[1 + idx[i] * 3];
 	devM[2 + i * 3] = M[2 + idx[i] * 3];
