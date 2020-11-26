@@ -8,9 +8,9 @@
 #include <math.h>
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
-//#include <cublas.h>
-//#include <curand.h>
-//#include <cusolverDn.h>
+#include <cublas_v2.h>
+#include <curand.h>
+#include <cusolverDn.h>
 //#include <device_functions.h>
 
 //constants
@@ -26,7 +26,6 @@ void printIarray(int* array, int points2show);
 
 //idx has to allocate mxn values
 //d has to allocate mxn values
-
 __global__
 void knn(float* Dt, int n, float* M, int m, int* idx, int k, float* d)
 {
@@ -57,6 +56,48 @@ void knn(float* Dt, int n, float* M, int m, int* idx, int k, float* d)
 		arr[j + 1] = key;
 		r[j + 1] = s;
 	}
+}
+
+__global__
+void Normals(float* q, int* neighbors, int n, int m, int k, float* A, float* normals)
+{
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	int j = 0, stride = 0;
+	float bar[3] = {};
+
+	//step 1: find the centroid of the k nearest neighbors
+	for (j = 1; j < k + 1; j++)
+	{
+		stride = neighbors[j + i * m];//neighbors are stored row-major
+		bar[0] += (q[0 + stride * 3] / (float)k);//q is stored colum-major (x1y1z1 ...)
+		bar[1] += (q[1 + stride * 3] / (float)k);
+		bar[2] += (q[2 + stride * 3] / (float)k);
+	}
+
+	__syncthreads();
+
+	float xi = 0.0f, yi = 0.0f, zi = 0.0f;
+	float A[9] = {};
+
+	//step 2: find the covariance matrix A
+	for (j = 1; j < k + 1; j++)
+	{
+		stride = neighbors[j + i * m];
+		xi = q[0 + stride * 3];
+		yi = q[1 + stride * 3];
+		zi = q[2 + stride * 3];
+		//place the values of the upper triangular matrix A only
+		A[0] += (xi - bar[0]) * (xi - bar[0]);
+		A[1] += (xi - bar[0]) * (yi - bar[1]);
+		A[2] += (xi - bar[0]) * (zi - bar[2]);
+		A[4] += (yi - bar[1]) * (yi - bar[1]);
+		A[5] += (yi - bar[1]) * (zi - bar[2]);
+		A[8] += (zi - bar[2]) * (zi - bar[2]);
+	}
+
+	//step 3: compute the eigenvectors of A
+
+
 }
 
 int main(void)
@@ -165,40 +206,60 @@ int main(void)
 
 	/////////End of 1st/////////
 
-	int GridSize = 8;
-	int BlockSize = num_points / GridSize;
-	printf("Grid Size: %d, Block Size: %d\n", GridSize, BlockSize);
-
 	//since this lines 
 	//p assumes the value of D
 	//q assumes the value of M
 	//number of p and q points
 	int p_points = d_points;
 	int q_points = m_points;
-	float* d_p, *d_q; 
+	float* d_p, * d_q;
 	cudaMalloc(&d_p, bytesD);//p points cloud
 	cudaMalloc(&d_q, bytesM);//p points cloud//q point cloud
 	//transfer data from D and M to p and q
 	cudaMemcpy(d_p, h_D, bytesD, cudaMemcpyHostToDevice);//copy data cloud to p
 	cudaMemcpy(d_q, h_M, bytesM, cudaMemcpyHostToDevice);//copy model cloud to q
-	cudaError_t err;//for checking errors in kernels
+	cudaError_t err = cudaSuccess;//for checking errors in kernels
 
 	/////////2nd: Normals estimation/////////
-	int* d_idx;
-	float* d_dist;
-	cudaMalloc(&d_idx, (size_t)p_points * (size_t)q_points * sizeof(int));
+	int GridSize = 8;
+	int BlockSize = q_points / GridSize;
+	printf("Grid Size: %d, Block Size: %d\n", GridSize, BlockSize);
+
+	int* d_NeighborIds = NULL;
+	float* d_dist = NULL;
+	size_t neighbors_size = (size_t)p_points * (size_t)q_points * sizeof(int);
+	cudaMalloc(&d_NeighborIds, neighbors_size);
 	cudaMalloc(&d_dist, (size_t)p_points * (size_t)q_points * sizeof(float));
 	k = 4;//number of nearest neighbors
-	knn <<< GridSize, BlockSize >>> (d_q, q_points, d_q, q_points, d_idx, k + 1, d_dist);
+	knn <<< GridSize, BlockSize >>> (d_q, q_points, d_q, q_points, d_NeighborIds, k + 1, d_dist);
 	if (err != cudaSuccess)
 		printf("Error in matching kernel: %s\n", cudaGetErrorString(err));
 	cudaDeviceSynchronize();
+	/*int* h_NeighborIds = (int*)malloc(neighbors_size);
+	cudaMemcpy(h_NeighborIds, d_NeighborIds, neighbors_size, cudaMemcpyDeviceToHost);
+	printf("Neighbor IDs:\n");
+	for (i = 0; i < p_points; i++)
+	{
+		printf("%d: ", i + 1);
+		for (j = 0; j < k + 1; j++)
+		{
+			printf("%d ", h_NeighborIds[j + i * q_points] + 1);
+		}
+		printf("\n");
+	}
+	printf("\n");*/
+	float* d_normals;
+	cudaMalloc(&d_normals, 3 * (size_t)q_points * sizeof(float));
+	Normals <<< GridSize, BlockSize >>> (d_q, d_NeighborIds, p_points, q_points, k, d_normals);
+
+
 	/////////End of 2nd/////////
 
 	free(mesh_x), free(mesh_y), free(z);
 	free(h_M), free(h_D);
-	//cudaFree(d_p), cudaFree(d_q);
-	//cudaFree(d_idx), cudaFree(d_dist);
+	cudaFree(d_p), cudaFree(d_q);
+	cudaFree(d_NeighborIds), cudaFree(d_dist); //free(h_NeighborIds);
+
 	return 0;
 }
 
