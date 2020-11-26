@@ -8,9 +8,9 @@
 #include <math.h>
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
-#include <cublas_v2.h>
-#include <curand.h>
-#include <cusolverDn.h>
+//#include <cublas.h>
+//#include <curand.h>
+//#include <cusolverDn.h>
 //#include <device_functions.h>
 
 //constants
@@ -24,7 +24,42 @@ void printScloud(float* cloud, int num_points, int points2show);
 void printSarray(float* array, int points2show);
 void printIarray(int* array, int points2show);
 
-int main()
+//idx has to allocate mxn values
+//d has to allocate mxn values
+
+__global__
+void knn(float* Dt, int n, float* M, int m, int* idx, int k, float* d)
+{
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	int j, s;
+	float key = 0.0f;
+
+	for (j = 0; j < m; j++)
+		d[j + i * m] = (float)sqrt(pow((Dt[0 + i * 3] - M[0 + j * 3]), 2) + pow((Dt[1 + i * 3] - M[1 + j * 3]), 2) + pow((Dt[2 + i * 3] - M[2 + j * 3]), 2));
+
+	__syncthreads();
+
+	//sort the distances saving the index values (insertion sort)
+	//each thread is in charge of a distance sort
+	float* arr = d + i * m;
+	int* r = idx + i * m;
+	r[0] = 0;
+	for (s = 0; s < m; s++)
+	{
+		key = arr[s];
+		j = s - 1;
+		while (j >= 0 && arr[j] > key)
+		{
+			arr[j + 1] = arr[j];
+			r[j + 1] = r[j];
+			j--;
+		}
+		arr[j + 1] = key;
+		r[j + 1] = s;
+	}
+}
+
+int main(void)
 {
 	int num_points, i, j, k;
 	float ti[3], ri[3];
@@ -75,7 +110,7 @@ int main()
 	//Create data point cloud matrix
 	size_t bytesD = (size_t)d_points * (size_t)3 * sizeof(float);
 	float* h_D = (float*)malloc(bytesD);
-	
+
 	k = 0;
 	for (i = 0; i < num_points; i++)
 	{
@@ -130,14 +165,40 @@ int main()
 
 	/////////End of 1st/////////
 
+	int GridSize = 8;
+	int BlockSize = num_points / GridSize;
+	printf("Grid Size: %d, Block Size: %d\n", GridSize, BlockSize);
+
+	//since this lines 
+	//p assumes the value of D
+	//q assumes the value of M
+	//number of p and q points
+	int p_points = d_points;
+	int q_points = m_points;
+	float* d_p, *d_q; 
+	cudaMalloc(&d_p, bytesD);//p points cloud
+	cudaMalloc(&d_q, bytesM);//p points cloud//q point cloud
+	//transfer data from D and M to p and q
+	cudaMemcpy(d_p, h_D, bytesD, cudaMemcpyHostToDevice);//copy data cloud to p
+	cudaMemcpy(d_q, h_M, bytesM, cudaMemcpyHostToDevice);//copy model cloud to q
+	cudaError_t err;//for checking errors in kernels
+
 	/////////2nd: Normals estimation/////////
-
-
-
+	int* d_idx;
+	float* d_dist;
+	cudaMalloc(&d_idx, (size_t)p_points * (size_t)q_points * sizeof(int));
+	cudaMalloc(&d_dist, (size_t)p_points * (size_t)q_points * sizeof(float));
+	k = 4;//number of nearest neighbors
+	knn <<< GridSize, BlockSize >>> (d_q, q_points, d_q, q_points, d_idx, k + 1, d_dist);
+	if (err != cudaSuccess)
+		printf("Error in matching kernel: %s\n", cudaGetErrorString(err));
+	cudaDeviceSynchronize();
 	/////////End of 2nd/////////
 
 	free(mesh_x), free(mesh_y), free(z);
 	free(h_M), free(h_D);
+	//cudaFree(d_p), cudaFree(d_q);
+	//cudaFree(d_idx), cudaFree(d_dist);
 	return 0;
 }
 
