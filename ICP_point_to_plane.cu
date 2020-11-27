@@ -73,7 +73,6 @@ void Normals(float* q, int* neighbors, int n, int m, int k, float* A, float* nor
 		bar[1] += (q[1 + stride * 3] / (float)k);
 		bar[2] += (q[2 + stride * 3] / (float)k);
 	}
-
 	__syncthreads();
 
 	float xi = 0.0f, yi = 0.0f, zi = 0.0f;
@@ -94,11 +93,124 @@ void Normals(float* q, int* neighbors, int n, int m, int k, float* A, float* nor
 		A[5] += (yi - bar[1]) * (zi - bar[2]);
 		A[8] += (zi - bar[2]) * (zi - bar[2]);
 	}
+	__syncthreads();
 
 	//step 3: compute the eigenvectors of A
+	float p1 = A[1] * A[1] + A[2] * A[2] + A[5] * A[5];
+	float q = 0.0f, p2 = 0.0f, p = 0.0f, r = 0.0f, phi = 0.0f;
+	float eigen[3] = {};
+	
+	q = (A[0] + A[4] + A[8]) / 3.0f;//trace(A)
+	p2 = (A[0] - q) * (A[0] - q) +
+	     (A[4] - q) * (A[4] - q) +
+	     (A[8] - q) * (A[8] - q) + 2 * p1;
+	p = (float)sqrt(p2 / 6.0f);
+	r = ((float)1 / (2 * p * p * p)) *
+	    ((A[0] - q) * ((A[4] - q) * (A[8] - q) - A[5] * A[5])
+	    - A[1] * (A[1] * (A[8] - q) - A[2] * A[5])
+	    + A[2] * (A[1] * A[5] - A[2] * (A[4] - q)));
+	if (r <= -1) phi = (float)M_PI / 3.0f;
+	else if (r >= 1) phi = 0.0f;
+	else  phi = (float)acos(r) / 3.0f;
 
+	//the eigenvalues satisfy eig3 <= eig2 <= eig1
+	eigen[0] = q + 2 * p * (float)cos(phi);//eigenvalue 1
+	eigen[2] = q + 2 * p * (float)cos(phi + (2 * M_PI / 3));//eigenvalue 3
+	eigen[1] = 3 * q - eigen[0] - eigen[2];//eigenvalue 2
+	
+	float lambda = eigen[2];
+	A[3] = A[1];
+	A[0] -= eigen[2];
+	A[4] -= eigen[2];
+	float aux = A[3] / A[0];
+	A[3] -= A[0] * aux;
+	A[4] -= A[1] * aux;
+	A[5] -= A[2] * aux;
 
+	float eigenvector[3] = { 1.0f,1.0f,1.0f };
+	eigenvector[1] = -A[5] / A[4];
+	eigenvector[0] = -(A[1] * eigenvector[1] + A[2] * eigenvector[2]) / A[0];
+	
+	normals[0 + i * 3] = eigenvector[0];
+	normals[1 + i * 3] = eigenvector[1];
+	normals[2 + i * 3] = eigenvector[2];
 }
+
+__global__
+void Matching(float* Dt, float* M, int m, int* idx)
+{
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	if (i < NUM_POINTS)
+	{
+		float min = 100000;
+		float d;
+		for (int j = 0; j < m; j++)
+		{
+			d = (float)sqrt(pow((Dt[0 + i * 3] - M[0 + j * 3]), 2) + pow((Dt[1 + i * 3] - M[1 + j * 3]), 2) + pow((Dt[2 + i * 3] - M[2 + j * 3]), 2));
+			if (d < min)
+			{
+				min = d;
+				idx[i] = j;
+			}
+		}
+	}
+}
+
+__global__
+void Cxb(float* p, int n, float* q, int m, int* idx, float* normals, float* C, float* b)
+{
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	float cn[6] = {};
+	int stride = idx[i];
+	cn[0] = p[1 + i * 3] * normals[2 + stride * 3] -
+		p[2 + i * 3] * normals[1 + stride * 3];//cix
+	cn[1] = p[2 + i * 3] * normals[0 + stride * 3] -
+		p[0 + i * 3] * normals[2 + stride * 3];//ciy
+	cn[2] = p[0 + i * 3] * normals[1 + stride * 3] -
+		p[1 + i * 3] * normals[0 + stride * 3];//ciz
+	cn[3] = normals[0 + stride * 3];//nix
+	cn[4] = normals[1 + stride * 3];//niy
+	cn[5] = normals[2 + stride * 3];//niz 
+}
+
+__global__
+void RyT(float* R, float* T, float* P, float* Q)
+{
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	int n = NUM_POINTS;
+	Q[0 + i * 3] = R[0 + 0 * 3] * P[0 + i * 3] + R[0 + 1 * 3] * P[1 + i * 3] + R[0 + 2 * 3] * P[2 + i * 3] + T[0];
+	Q[1 + i * 3] = R[1 + 0 * 3] * P[0 + i * 3] + R[1 + 1 * 3] * P[1 + i * 3] + R[1 + 2 * 3] * P[2 + i * 3] + T[1];
+	Q[2 + i * 3] = R[2 + 0 * 3] * P[0 + i * 3] + R[2 + 1 * 3] * P[1 + i * 3] + R[2 + 2 * 3] * P[2 + i * 3] + T[2];
+}
+
+__global__
+void Error(float* aux, float* D, float* M, int* idx, float* error, int iteration)
+{
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+	aux[0 + i * 3] = pow(M[0 + idx[i] * 3] - D[0 + i * 3], 2);
+	aux[1 + i * 3] = pow(M[1 + idx[i] * 3] - D[1 + i * 3], 2);
+	aux[2 + i * 3] = pow(M[2 + idx[i] * 3] - D[2 + i * 3], 2);
+	__syncthreads();
+
+	for (int s = 1; s < NUM_POINTS; s *= 2)//parallel reduction
+	{
+		if (i % (2 * s) == 0)
+		{
+			aux[0 + i * 3] += aux[0 + (i + s) * 3];
+			aux[1 + i * 3] += aux[1 + (i + s) * 3];
+			aux[2 + i * 3] += aux[2 + (i + s) * 3];
+		}
+		__syncthreads();
+	}
+
+	if (i == 0)
+	{
+		error[iteration] = (float)sqrt((aux[0] + aux[1] + aux[2]) / (NUM_POINTS));
+		//printf("Error: %f\n",error[iteration]);
+	}
+}
+
 
 int main(void)
 {
@@ -219,11 +331,14 @@ int main(void)
 	cudaMemcpy(d_p, h_D, bytesD, cudaMemcpyHostToDevice);//copy data cloud to p
 	cudaMemcpy(d_q, h_M, bytesM, cudaMemcpyHostToDevice);//copy model cloud to q
 	cudaError_t err = cudaSuccess;//for checking errors in kernels
+	cudaEvent_t start, stop;
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
 
 	/////////2nd: Normals estimation/////////
 	int GridSize = 8;
 	int BlockSize = q_points / GridSize;
-	printf("Grid Size: %d, Block Size: %d\n", GridSize, BlockSize);
+	printf("For normals:\nGrid Size: %d, Block Size: %d\n", GridSize, BlockSize);
 
 	int* d_NeighborIds = NULL;
 	float* d_dist = NULL;
@@ -231,9 +346,14 @@ int main(void)
 	cudaMalloc(&d_NeighborIds, neighbors_size);
 	cudaMalloc(&d_dist, (size_t)p_points * (size_t)q_points * sizeof(float));
 	k = 4;//number of nearest neighbors
+	
+	float* d_normals;
+	cudaMalloc(&d_normals, 3 * (size_t)q_points * sizeof(float));
+	
+	cudaEventRecord(start);//start time normals estimation
 	knn <<< GridSize, BlockSize >>> (d_q, q_points, d_q, q_points, d_NeighborIds, k + 1, d_dist);
 	if (err != cudaSuccess)
-		printf("Error in matching kernel: %s\n", cudaGetErrorString(err));
+		printf("Error in knn kernel: %s\n", cudaGetErrorString(err));
 	cudaDeviceSynchronize();
 	/*int* h_NeighborIds = (int*)malloc(neighbors_size);
 	cudaMemcpy(h_NeighborIds, d_NeighborIds, neighbors_size, cudaMemcpyDeviceToHost);
@@ -241,24 +361,155 @@ int main(void)
 	for (i = 0; i < p_points; i++)
 	{
 		printf("%d: ", i + 1);
-		for (j = 0; j < k + 1; j++)
-		{
-			printf("%d ", h_NeighborIds[j + i * q_points] + 1);
-		}
+		for (j = 0; j < k + 1; j++) printf("%d ", h_NeighborIds[j + i * q_points] + 1);
 		printf("\n");
 	}
 	printf("\n");*/
-	float* d_normals;
-	cudaMalloc(&d_normals, 3 * (size_t)q_points * sizeof(float));
 	Normals <<< GridSize, BlockSize >>> (d_q, d_NeighborIds, p_points, q_points, k, d_normals);
-
-
+	if (err != cudaSuccess)
+		printf("Error in normals kernel: %s\n", cudaGetErrorString(err));
+	cudaDeviceSynchronize();
+	/*float* h_normals = (float*)malloc(bytesM);
+	cudaMemcpy(h_normals, d_normals, bytesM, cudaMemcpyDeviceToHost);
+	printf("Normals:\n");
+	for (i = 0; i < q_points; i++)
+	{
+		printf("%d: ", i + 1);
+		for (j = 0; j < 3; j++) printf("%.3f ", h_normals[j + i * 3]);
+		printf("\n");
+	}
+	printf("\n");*/
+	
+	cudaEventRecord(stop);
+	cudaEventSynchronize(stop);
+	float milliseconds = 0;
+	cudaEventElapsedTime(&milliseconds, start, stop);
+	printf("Normals were calculated in %f ms\n\n", miliseconds);
+	
 	/////////End of 2nd/////////
+	
+	/////////3rd: ICP algorithm/////////
+	
+	int iteration = 0;
+	GridSize = 8;
+	BlockSize = NUM_POINTS / GridSize;
+	printf("For ICP loop:\nGrid Size: %d, Block Size: %d\n", GridSize, BlockSize);
+	
+	int* d_idx = NULL;//index vector (used for correspondence)
+	cudaMalloc(&d_idx, (size_t)p_points * sizeof(int));
+	//int* h_idx = (int*)malloc(D_size * sizeof(int));
+	
+	float* d_temp_r = NULL;//temporary rotation matrix
+	float* d_temp_T = NULL;//temporary transalation vector
+	cudaMalloc(&d_temp_r, sizeof(float) * 9);
+	cudaMalloc(&d_temp_T, sizeof(float) * 3);
+	
+	float* d_error = NULL;
+	cudaMalloc(&d_error, (size_t)(MAX_ITER + 1) * sizeof(float));
+	cudaMemset(d_error, 0, (size_t)(MAX_ITER + 1) * sizeof(float));
+	//float* h_error = (float*)malloc((size_t)(MAX_ITER + 1) * sizeof(float));
+	
+	float* d_C = NULL, *d_b = NULL;//for the system of linear equations (minimization)
+	cudaMalloc(&d_C, 36 * sizeof(float));
+	cudaMalloc(&d_b, 6 * sizeof(float));
+	float* h_b = (float*)malloc(6 * sizeof(float));
+	
+	//cuBLAS handle
+	cublasHandle_t cublasH;
+	cublasCreate(&cublasH);
+	
+	//cuSolver handle
+	cusolverDnHandle_t cusolverH;
+	cusolverDnCreate(&cusolverH);
+	int Lwork = 0;
+	float* d_work = NULL;
+	int *devInfo = NULL;
+	cudaMalloc (&devInfo, sizeof(int));
+	float cx, cy, cz, sx, sy, sz;
+	
+	cudaEventRecord(start);
+	while (iteration < MAX_ITER)
+	{
+		//////////////////Matching step/////////////////
+		Matching << <GridSize, BlockSize >> > (d_p, d_q, q_points, d_idx);
+		err = cudaGetLastError();
+		if (err != cudaSuccess)
+			printf("Error in matching kernel: %s\n", cudaGetErrorString(err));
+		cudaDeviceSynchronize();
+		/*cudaMemcpy(h_idx, d_idx, D_size*sizeof(int), cudaMemcpyDeviceToHost);
+		printf("Index values:\n");
+		printIarray(h_idx, D_size);*/
+		/////////////////end of Matching/////////////////
+		
+		/////////////////Minimization step (point-to-plane)/////////////////
+		
+		Cxb <<< GridSize, BlockSize >>> (d_p, p_points, d_q, q_points, d_idx, normals, d_C, d_b);
+		err = cudaGetLastError();
+		if (err != cudaSuccess)
+			printf("Error in Cxb kernel: %s\n", cudaGetErrorString(err));
+		cudaDeviceSynchronize();
+		
+		//Allocate the buffer
+		cusolverDnSpotrf_bufferSize(cusolverH, CUBLAS_FILL_MODE_UPPER, 6, d_C, 6, &Lwork);
+		cudaMalloc(&d_work, sizeof(float) * lwork);//allocate memory for the buffer
+		//Find the triangular Cholesky factor
+		cusolverDnSpotrf(cusolverH, CUBLAS_FILL_MODE_UPPER, 6, d_C, 6, d_work, Lwork, devInfo);
+		//solve the system of linear equations
+		cusolverDnSpotrs(cusolverH, CUBLAS_FILL_MODE_UPPER, 6, 1, d_C, 6, d_b, 1, devInfo);//d_b holds the answer
+		cudaMemcpy(h_b, d_b, 6 * sizeof(float), cudaMemcpyDeviceToHost);//move b to the CPU
+		
+		//rotation matrix
+		cx = (float)cos(b[0]); cy = (float)cos(b[1]); cz = (float)cos(b[2]);
+		sx = (float)sin(b[0]); sy = (float)sin(b[1]); sz = (float)sin(b[2]);
+		h_temp_r[0] = cy * cz; h_temp_r[3] = cz * sx * sy - cx * sz;  h_temp_r[6] = cx * cz * sy + sx * sz;
+		h_temp_r[1] = cy * sz; h_temp_r[4] = cx * cz + sx * sy * sz; h_temp_r[7] = cx * sy * sz - cz * sx;
+		h_temp_r[2] = -sy; h_temp_r[5] = cy * sx; h_temp_r[8] = cx * cy;
+		//translation vector
+		h_temp_T[0] = b[3];
+		h_temp_T[1] = b[4];
+		h_temp_T[2] = b[5];
+		
+		cudaMemcpy(d_temp_r, h_temp_r, 9 * sizeof(float), cudaMemcpyHostToDevice);//move temp_r to the GPU
+		cudaMemcpy(d_temp_T, h_temp_T, 3 * sizeof(float), cudaMemcpyHostToDevice);//move temp_T to the GPU
+		/////////////////end of Minimization/////////////////
+		
+		/////////////////Transformation step/////////////////
+		RyT << <GridSize, BlockSize >> > (d_temp_r, d_temp_T, d_Dt, d_devD);
+		err = cudaGetLastError();
+		if (err != cudaSuccess)
+			printf("Error in RyT kernel: %s\n", cudaGetErrorString(err));
+		cudaDeviceSynchronize();
+		cublasScopy(cublasH, 3 * D_size, d_devD, 1, d_Dt, 1);
+		/////////////////end of Transformation/////////////////
+		
+		/////////////////Error estimation/////////////////
+		cudaMemset(d_devD, 0, 3 * n * sizeof(double));
+		Error << <GridSize, BlockSize >> > (d_devD, d_Dt, d_M, d_idx, d_error, iteration);
+		err = cudaGetLastError();
+		if (err != cudaSuccess)
+			printf("Error in error kernel: %s\n", cudaGetErrorString(err));
+		cudaDeviceSynchronize();
+		/////////////////end of Error estimation/////////////////
+		
+		iteration++;
+	}
+	cudaEventRecord(stop);
+	cudaEventSynchronize(stop);
+	milliseconds = 0.0f;
+	cudaEventElapsedTime(&milliseconds, start, stop);
+	printf("Elapsed time: %f ms\n", milliseconds);
+	/////////End of 3rd/////////
 
 	free(mesh_x), free(mesh_y), free(z);
 	free(h_M), free(h_D);
 	cudaFree(d_p), cudaFree(d_q);
-	cudaFree(d_NeighborIds), cudaFree(d_dist); //free(h_NeighborIds);
+	cudaFree(d_NeighborIds), cudaFree(d_dist);//free(h_NeighborIds);
+	cudaFree(d_normals);//free(h_normals)
+	cudaFree(d_idx); //free(h_idx);
+	cudaFree(d_error);
+	cudaFree(d_work), CudaFree(devInfo);
+	cudaFree(d_C), cudaFree(d_b), free(h_b);
+	cudaFree(d_temp_r), cudaFree(d_temp_T), free(h_temp_r), free(h_temp_T);
 
 	return 0;
 }
