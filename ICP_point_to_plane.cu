@@ -57,6 +57,7 @@ void knn(float* Dt, int n, float* M, int m, int* idx, int k, float* d)
 		arr[j + 1] = key;
 		r[j + 1] = s;
 	}
+	free(arr), free(r);
 }
 
 __global__
@@ -170,17 +171,17 @@ void Cxb(float* p, int n, float* q, int m, int* idx, float* normals, float* cn, 
 	cn[4 + i * 6] = normals[1 + stride * 3];//niy
 	cn[5 + i * 6] = normals[2 + stride * 3];//niz
 
-	C_total[0 + i * 6] = cn[0 + i * 6] * cn[0 + i * 6]; C_total[1 + i * 6] = cn[0 + i * 6] * cn[1 + i * 6]; C_total[2 + i * 6] = cn[0 + i * 6] * cn[2 + i * 6];
-	C_total[3 + i * 6] = cn[0 + i * 6] * cn[3 + i * 6]; C_total[4 + i * 6] = cn[0 + i * 6] * cn[4 + i * 6]; C_total[5 + i * 6] = cn[0 + i * 6] * cn[5 + i * 6];
-	C_total[6 + i * 6] = cn[1 + i * 6] * cn[1 + i * 6]; C_total[7 + i * 6] = cn[1 + i * 6] * cn[2 + i * 6]; C_total[8 + i * 6] = cn[1 + i * 6] * cn[3 + i * 6];
-	C_total[9 + i * 6] = cn[1 + i * 6] * cn[4 + i * 6]; C_total[10 + i * 6] = cn[1 + i * 6] * cn[5 + i * 6]; C_total[11 + i * 6] = cn[2 + i * 6] * cn[2 + i * 6];
-	C_total[12 + i * 6] = cn[2 + i * 6] * cn[3 + i * 6]; C_total[13 + i * 6] = cn[2 + i * 6] * cn[4 + i * 6]; C_total[14 + i * 6] = cn[2 + i * 6] * cn[5 + i * 6];
-	C_total[15 + i * 6] = cn[3 + i * 6] * cn[3 + i * 6]; C_total[16 + i * 6] = cn[3 + i * 6] * cn[4 + i * 6]; C_total[17 + i * 6] = cn[3 + i * 6] * cn[5 + i * 6];
-	C_total[18 + i * 6] = cn[4 + i * 6] * cn[4 + i * 6]; C_total[19 + i * 6] = cn[4 + i * 6] * cn[5 + i * 6]; C_total[20 + i * 6] = cn[5 + i * 6] * cn[5 + i * 6];
+	C_total[0 + i * 21] = cn[0 + i * 6] * cn[0 + i * 6]; C_total[1 + i * 21] = cn[0 + i * 6] * cn[1 + i * 6]; C_total[2 + i * 21] = cn[0 + i * 6] * cn[2 + i * 6];
+	C_total[3 + i * 21] = cn[0 + i * 6] * cn[3 + i * 6]; C_total[4 + i * 21] = cn[0 + i * 6] * cn[4 + i * 6]; C_total[5 + i * 21] = cn[0 + i * 6] * cn[5 + i * 6];
+	C_total[6 + i * 21] = cn[1 + i * 6] * cn[1 + i * 6]; C_total[7 + i * 21] = cn[1 + i * 6] * cn[2 + i * 6]; C_total[8 + i * 21] = cn[1 + i * 6] * cn[3 + i * 6];
+	C_total[9 + i * 21] = cn[1 + i * 6] * cn[4 + i * 6]; C_total[10 + i * 21] = cn[1 + i * 6] * cn[5 + i * 6]; C_total[11 + i * 21] = cn[2 + i * 6] * cn[2 + i * 6];
+	C_total[12 + i * 21] = cn[2 + i * 6] * cn[3 + i * 6]; C_total[13 + i * 21] = cn[2 + i * 6] * cn[4 + i * 6]; C_total[14 + i * 21] = cn[2 + i * 6] * cn[5 + i * 6];
+	C_total[15 + i * 21] = cn[3 + i * 6] * cn[3 + i * 6]; C_total[16 + i * 21] = cn[3 + i * 6] * cn[4 + i * 6]; C_total[17 + i * 21] = cn[3 + i * 6] * cn[5 + i * 6];
+	C_total[18 + i * 21] = cn[4 + i * 6] * cn[4 + i * 6]; C_total[19 + i * 21] = cn[4 + i * 6] * cn[5 + i * 6]; C_total[20 + i * 21] = cn[5 + i * 6] * cn[5 + i * 6];
 
 	aux[i] = (p[0 + i * 3] - q[0 + i * 3]) * cn[3 + i * 6] +
-			 (p[1 + i * 3] - q[1 + i * 3]) * cn[4 + i * 6] +
-			 (p[2 + i * 3] - q[2 + i * 3]) * cn[5 + i * 6];
+		 (p[1 + i * 3] - q[1 + i * 3]) * cn[4 + i * 6] +
+		 (p[2 + i * 3] - q[2 + i * 3]) * cn[5 + i * 6];
 
 	b_total[0 + i * 6] = cn[0 + i * 6] * aux[i]; b_total[1 + i * 6] = cn[1 + i * 6] * aux[i]; b_total[2 + i * 6] = cn[2 + i * 6] * aux[i];
 	b_total[3 + i * 6] = cn[3 + i * 6] * aux[i]; b_total[4 + i * 6] = cn[4 + i * 6] * aux[i]; b_total[5 + i * 6] = cn[5 + i * 6] * aux[i];
@@ -190,20 +191,38 @@ void Cxb(float* p, int n, float* q, int m, int* idx, float* normals, float* cn, 
 	{
 		if (i % (2 * s) == 0)
 		{
-			C_total[0 + i * 6] += C_total[0 + (i + s) * 6]; C_total[1 + i * 6] += C_total[1 + (i + s) * 6]; C_total[2 + i * 6] += C_total[2 + (i + s) * 6];
-			C_total[3 + i * 6] += C_total[3 + (i + s) * 6]; C_total[4 + i * 6] += C_total[4 + (i + s) * 6]; C_total[5 + i * 6] += C_total[5 + (i + s) * 6];
-			C_total[6 + i * 6] += C_total[6 + (i + s) * 6]; C_total[7 + i * 6] += C_total[7 + (i + s) * 6]; C_total[8 + i * 6] += C_total[8 + (i + s) * 6];
-			C_total[9 + i * 6] += C_total[9 + (i + s) * 6]; C_total[10 + i * 6] += C_total[10 + (i + s) * 6]; C_total[11 + i * 6] += C_total[11 + (i + s) * 6];
-			C_total[12 + i * 6] += C_total[12 + (i + s) * 6]; C_total[13 + i * 6] += C_total[13 + (i + s) * 6]; C_total[14 + i * 6] += C_total[14 + (i + s) * 6];
-			C_total[15 + i * 6] += C_total[15 + (i + s) * 6]; C_total[16 + i * 6] += C_total[16 + (i + s) * 6]; C_total[17 + i * 6] += C_total[17 + (i + s) * 6];
-			C_total[18 + i * 6] += C_total[18 + (i + s) * 6]; C_total[19 + i * 6] += C_total[19 + (i + s) * 6]; C_total[20 + i * 6] += C_total[20 + (i + s) * 6];
+			//C
+			C_total[0 + i * 21] += C_total[0 + (i + s) * 21]; C_total[1 + i * 21] += C_total[1 + (i + s) * 21]; C_total[2 + i * 21] += C_total[2 + (i + s) * 21];
+			C_total[3 + i * 21] += C_total[3 + (i + s) * 21]; C_total[4 + i * 21] += C_total[4 + (i + s) * 21]; C_total[5 + i * 21] += C_total[5 + (i + s) * 21];
+			C_total[6 + i * 21] += C_total[6 + (i + s) * 21]; C_total[7 + i * 21] += C_total[7 + (i + s) * 21]; C_total[8 + i * 21] += C_total[8 + (i + s) * 21];
+			C_total[9 + i * 21] += C_total[9 + (i + s) * 21]; C_total[10 + i * 21] += C_total[10 + (i + s) * 21]; C_total[11 + i * 21] += C_total[11 + (i + s) * 21];
+			C_total[12 + i * 21] += C_total[12 + (i + s) * 21]; C_total[13 + i * 21] += C_total[13 + (i + s) * 21]; C_total[14 + i * 21] += C_total[14 + (i + s) * 21];
+			C_total[15 + i * 21] += C_total[15 + (i + s) * 21]; C_total[16 + i * 21] += C_total[16 + (i + s) * 21]; C_total[17 + i * 21] += C_total[17 + (i + s) * 21];
+			C_total[18 + i * 21] += C_total[18 + (i + s) * 21]; C_total[19 + i * 21] += C_total[19 + (i + s) * 21]; C_total[20 + i * 21] += C_total[20 + (i + s) * 21];
 
+			//b
 			b_total[0 + i * 6] += b_total[0 + (i + s) * 6]; b_total[1 + i * 6] += b_total[1 + (i + s) * 6]; b_total[2 + i * 6] += b_total[2 + (i + s) * 6];
 			b_total[3 + i * 6] += b_total[3 + (i + s) * 6]; b_total[4 + i * 6] += b_total[4 + (i + s) * 6]; b_total[5 + i * 6] += b_total[5 + (i + s) * 6];
 		}
 		__syncthreads();
 	}
-
+	
+	if (i == 0)
+	{
+		//C
+		C[0] = C_total[0 + i * 21]; C[6] = C_total[1 + i * 21]; C[12] = C_total[2 + i * 21]; C[18] = C_total[3 + i * 21]; C[24] = C_total[4 + i * 21]; C[30] = C_total[5 + i * 21];
+		C[7] = C_total[6 + i * 21]; C[13] = C_total[7 + i * 21]; C[19] = C_total[8 + i * 21]; C[25] = C_total[9 + i * 21]; C[31] = C_total[10 + i * 21];
+		C[14] = C_total[11 + i * 21]; C[20] = C_total[12 + i * 21]; C[26] = C_total[13 + i * 21]; C[32] = C_total[14 + i * 21];
+		C[21] = C_total[15 + i * 21]; C[27] = C_total[16 + i * 21]; C[33] = C_total[17 + i * 21];
+		C[28] = C_total[18 + i * 21]; C[34] = C_total[19 + i * 21];
+		C[35] = C_total[20 + i * 21];
+		
+		//b
+		b[0] = b_total[0 + i * 6]; b[1] = b_total[1 + i * 6]; b[2] = b_total[2 + i * 6];
+		b[3] = b_total[3 + i * 6]; b[4] = b_total[4 + i * 6]; b[5] = b_total[5 + i * 6];
+		b[6] = b_total[6 + i * 6]; b[7] = b_total[7+ i * 6]; b[6] = b_total[0 + i * 6];
+	}
+	free(aux);
 }
 
 __global__
@@ -448,6 +467,7 @@ int main(void)
 
 	float* d_C = NULL, * d_b = NULL;//for the system of linear equations (minimization)
 	cudaMalloc(&d_C, 36 * sizeof(float));
+	cudaMemset(d_C, 0, 36 * sizeof(float));
 	cudaMalloc(&d_b, 6 * sizeof(float));
 	float* h_b = (float*)malloc(6 * sizeof(float));
 	float* d_cn, * d_C_total, * d_b_total;
