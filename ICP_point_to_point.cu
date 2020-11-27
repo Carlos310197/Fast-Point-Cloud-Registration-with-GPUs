@@ -311,8 +311,11 @@ int main()
 	cudaMalloc(&d_VT, sizeof(float) * 9);
 	cudaMalloc(&devInfo, sizeof(int));
 	cudaMalloc(&d_W, sizeof(float) * 9);
-	cusolverDnHandle_t cusolverH;//cuSolver handle
+	
+	//cuSolver handle
+	cusolverDnHandle_t cusolverH;
 	cusolverDnCreate(&cusolverH);
+	
 	cusolverDnDgesvd_bufferSize(cusolverH, 3, 3, &lwork);
 	cudaMalloc((void**)&d_work, sizeof(float) * lwork);
 
