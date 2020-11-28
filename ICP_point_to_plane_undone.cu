@@ -74,7 +74,7 @@ void Normals(float* q , int* neighbors, int n, int m, int k, float* bar, float* 
 		bar[1 + 3 * i] += (q[1 + stride * 3] / (float)k);
 		bar[2 + 3 * i] += (q[2 + stride * 3] / (float)k);
 	}
-	//for (j = 0; j < 3; j++) printf("bar%d[%d]: %.3f\n", j, i, bar[j + i * 3]);
+	//for (j = 0; j < 3; j++) printf("bar%d[%d]: %.4f\n", j, i, bar[j + i * 3]);
 	__syncthreads();
 
 	//step 2: find the covariance matrix A
@@ -82,12 +82,12 @@ void Normals(float* q , int* neighbors, int n, int m, int k, float* bar, float* 
 	{
 		stride = neighbors[j + i * m];
 		//place the values of the upper triangular matrix A only
-		A_total[0 + 9 * i] += (q[0 + stride * 3] - bar[0]) * (q[0 + stride * 3] - bar[0]);
-		A_total[1 + 9 * i] += (q[0 + stride * 3] - bar[0]) * (q[1 + stride * 3] - bar[1]);
-		A_total[2 + 9 * i] += (q[0 + stride * 3] - bar[0]) * (q[2 + stride * 3] - bar[2]);
-		A_total[4 + 9 * i] += (q[1 + stride * 3] - bar[1]) * (q[1 + stride * 3] - bar[1]);
-		A_total[5 + 9 * i] += (q[1 + stride * 3] - bar[1]) * (q[2 + stride * 3] - bar[2]);
-		A_total[8 + 9 * i] += (q[2 + stride * 3] - bar[2]) * (q[2 + stride * 3] - bar[2]);
+		A_total[0 + 9 * i] += (q[0 + stride * 3] - bar[0 + 3 * i]) * (q[0 + stride * 3] - bar[0 + 3 * i]);
+		A_total[1 + 9 * i] += (q[0 + stride * 3] - bar[0 + 3 * i]) * (q[1 + stride * 3] - bar[1 + 3 * i]);
+		A_total[2 + 9 * i] += (q[0 + stride * 3] - bar[0 + 3 * i]) * (q[2 + stride * 3] - bar[2 + 3 * i]);
+		A_total[4 + 9 * i] += (q[1 + stride * 3] - bar[1 + 3 * i]) * (q[1 + stride * 3] - bar[1 + 3 * i]);
+		A_total[5 + 9 * i] += (q[1 + stride * 3] - bar[1 + 3 * i]) * (q[2 + stride * 3] - bar[2 + 3 * i]);
+		A_total[8 + 9 * i] += (q[2 + stride * 3] - bar[2 + 3 * i]) * (q[2 + stride * 3] - bar[2 + 3 * i]);
 	}
 	__syncthreads();
 
@@ -377,6 +377,10 @@ int main(void)
 	cudaMemcpy(d_p, h_D, bytesD, cudaMemcpyHostToDevice);//copy data cloud to p
 	cudaMemcpy(d_q, h_M, bytesM, cudaMemcpyHostToDevice);//copy model cloud to q
 	cudaError_t err = cudaSuccess;//for checking errors in kernels
+	//for measuring time
+	cudaEvent_t start, stop;
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
 
 	/////////2nd: Normals estimation/////////
 	int GridSize = 8;
@@ -389,6 +393,7 @@ int main(void)
 	cudaMalloc(&d_NeighborIds, neighbors_size);
 	cudaMalloc(&d_dist, (size_t)p_points * (size_t)q_points * sizeof(float));
 	k = 4;//number of nearest neighbors
+	
 	float* d_bar, * d_A;
 	cudaMalloc(&d_bar, bytesM);
 	cudaMalloc(&d_A, (size_t)9 * (size_t)q_points * sizeof(float));
@@ -400,27 +405,19 @@ int main(void)
 	cudaMalloc(&d_normals, bytesM);
 	float* h_normals = (float*)malloc(bytesM);
 
-	//cudaEventRecord(start);//start time normals estimation
+	cudaEventRecord(start);//start time normals estimation
 	knn <<< GridSize, BlockSize >>> (d_q, q_points, d_q, q_points, d_NeighborIds, k + 1, d_dist);
 	err = cudaGetLastError();
 	if (err != cudaSuccess)
 		printf("Error in knn kernel: %s\n", cudaGetErrorString(err));
 	cudaDeviceSynchronize();
-	int* h_NeighborIds = (int*)malloc(neighbors_size);
-	cudaMemcpy(h_NeighborIds, d_NeighborIds, neighbors_size, cudaMemcpyDeviceToHost);
-	/*printf("Neighbor IDs:\n");
-	for (i = 0; i < p_points; i++)
-	{
-		printf("%d: ", i + 1);
-		for (j = 0; j < k + 1; j++) printf("%d ", h_NeighborIds[j + i * q_points] + 1);
-		printf("\n");
-	}
-	printf("\n");*/
+	
 	Normals <<< GridSize, BlockSize >>> (d_q, d_NeighborIds, p_points, q_points, k, d_bar, d_A, d_normals);
 	err = cudaGetLastError();
 	if (err != cudaSuccess)
 		printf("Error in normals kernel: %s\n", cudaGetErrorString(err));
 	cudaDeviceSynchronize();
+	
 	cudaMemcpy(h_A, d_A, (size_t)9 * (size_t)q_points * sizeof(float), cudaMemcpyDeviceToHost);
 	for (i = 0; i < q_points; i++)
 	{
@@ -433,24 +430,23 @@ int main(void)
 		printf("\n");
 	}
 
-
 	cudaMemcpy(h_normals, d_normals, bytesM, cudaMemcpyDeviceToHost);
-	/*printf("Normals:\n");
+	printf("Normals:\n");
 	for (i = 0; i < q_points; i++)
 	{
 		printf("%d: ", i + 1);
 		for (j = 0; j < 3; j++) printf("%.4f ", h_normals[j + i * 3]);
 		printf("\n");
 	}
-	printf("\n");*/
+	printf("\n");
 	/////////End of 2nd/////////
 
 	free(mesh_x), free(mesh_y), free(z);
 	free(h_M), free(h_D);
 	cudaFree(d_p), cudaFree(d_q);// cudaFree(d_aux);
 	cudaFree(d_NeighborIds), cudaFree(d_dist);free(h_NeighborIds);
-	cudaFree(d_bar), cudaFree(d_A);
-	cudaFree(d_normals); //free(h_normals);
+	cudaFree(d_bar), cudaFree(d_A); free(h_A);
+	cudaFree(d_normals), free(h_normals);
 	//cudaFree(d_idx); //free(h_idx);
 	//cudaFree(d_error);
 	//cudaFree(d_work), cudaFree(devInfo);
