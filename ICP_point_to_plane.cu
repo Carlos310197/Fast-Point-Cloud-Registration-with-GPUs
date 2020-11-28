@@ -25,24 +25,43 @@ void printScloud(float* cloud, int num_points, int points2show);
 void printSarray(float* array, int points2show);
 void printIarray(int* array, int points2show);
 
+__device__
+int minimum(float* d, int n)
+{
+	float min = 10000.0;
+	int idx = 0;
+	for (int j = 0; j < n; j++)
+	{
+		if (d[j] < min)
+		{
+			min = d[j];
+			idx = j;
+		}
+	}
+	return idx;
+}
+
 //idx has to allocate mxn values
 //d has to allocate mxn values
 __global__
 void knn(float* Dt, int n, float* M, int m, int* idx, int k, float* d)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	int j, s;
-	float key = 0.0f;
+	int j;
+	//int s;
+	//float key = 0.0f;
 
 	for (j = 0; j < m; j++)
 		d[j + i * m] = (float)sqrt(pow((Dt[0 + i * 3] - M[0 + j * 3]), 2) + pow((Dt[1 + i * 3] - M[1 + j * 3]), 2) + pow((Dt[2 + i * 3] - M[2 + j * 3]), 2));
 
 	__syncthreads();
 
-	//sort the distances saving the index values (insertion sort)
-	//each thread is in charge of a distance sort
 	float* arr = d + i * m;
-	int* r = idx + i * m;
+	int* r = idx + i * k;
+
+	//TOO SLOW (insertion sort)
+	/*//sort the distances saving the index values (insertion sort)
+	//each thread is in charge of a distance sort
 	r[0] = 0;
 	for (s = 0; s < m; s++)
 	{
@@ -56,8 +75,14 @@ void knn(float* Dt, int n, float* M, int m, int* idx, int k, float* d)
 		}
 		arr[j + 1] = key;
 		r[j + 1] = s;
+	}*/
+
+	//instead lets just make comparisons
+	for (j = 0; j < k; j++)//up to k+1 because neighbors are only useful since the 2nd point
+	{
+		r[j] = minimum(arr, m);//store since the second value
+		arr[r[j]] = 10000.0;//make the current distance invalid
 	}
-	free(arr), free(r);
 }
 
 __global__
@@ -66,29 +91,29 @@ void Normals(float* q, int* neighbors, int n, int m, int k, float* bar, float* A
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = 0, stride = 0;
 
-	printf("%d\n", i);
+	//printf("%d\n", i);
 	//step 1: find the centroid of the k nearest neighbors
 	for (j = 1; j < k + 1; j++)
 	{
-		stride = neighbors[j + i * m];//neighbors are stored row-major
+		stride = neighbors[j + i * (k + 1)];//neighbors are stored row-major
 		bar[0 + 3 * i] += (q[0 + stride * 3] / (float)k);//q is stored colum-major (x1y1z1 ...)
 		bar[1 + 3 * i] += (q[1 + stride * 3] / (float)k);
 		bar[2 + 3 * i] += (q[2 + stride * 3] / (float)k);
 	}
-	for (j = 0; j < 3; j++) printf("bar%d[%d]: %.3f\n", j, i, bar[j + i * 3]);
+	//for (j = 0; j < 3; j++) printf("bar%d[%d]: %.4f\n", j, i, bar[j + i * 3]);
 	__syncthreads();
 
-	//step 2: find the covariance matrix A
+	//step 2: find the covariance matrix A (stored row major)
 	for (j = 1; j < k + 1; j++)
 	{
-		stride = neighbors[j + i * m];
+		stride = neighbors[j + i * (k + 1)];
 		//place the values of the upper triangular matrix A only
-		A_total[0 + 9 * i] += (q[0 + stride * 3] - bar[0]) * (q[0 + stride * 3] - bar[0]);
-		A_total[1 + 9 * i] += (q[0 + stride * 3] - bar[0]) * (q[1 + stride * 3] - bar[1]);
-		A_total[2 + 9 * i] += (q[0 + stride * 3] - bar[0]) * (q[2 + stride * 3] - bar[2]);
-		A_total[4 + 9 * i] += (q[1 + stride * 3] - bar[1]) * (q[1 + stride * 3] - bar[1]);
-		A_total[5 + 9 * i] += (q[1 + stride * 3] - bar[1]) * (q[2 + stride * 3] - bar[2]);
-		A_total[8 + 9 * i] += (q[2 + stride * 3] - bar[2]) * (q[2 + stride * 3] - bar[2]);
+		A_total[0 + 9 * i] += (q[0 + stride * 3] - bar[0 + 3 * i]) * (q[0 + stride * 3] - bar[0 + 3 * i]);
+		A_total[1 + 9 * i] += (q[0 + stride * 3] - bar[0 + 3 * i]) * (q[1 + stride * 3] - bar[1 + 3 * i]);
+		A_total[2 + 9 * i] += (q[0 + stride * 3] - bar[0 + 3 * i]) * (q[2 + stride * 3] - bar[2 + 3 * i]);
+		A_total[4 + 9 * i] += (q[1 + stride * 3] - bar[1 + 3 * i]) * (q[1 + stride * 3] - bar[1 + 3 * i]);
+		A_total[5 + 9 * i] += (q[1 + stride * 3] - bar[1 + 3 * i]) * (q[2 + stride * 3] - bar[2 + 3 * i]);
+		A_total[8 + 9 * i] += (q[2 + stride * 3] - bar[2 + 3 * i]) * (q[2 + stride * 3] - bar[2 + 3 * i]);
 	}
 	__syncthreads();
 
@@ -116,21 +141,39 @@ void Normals(float* q, int* neighbors, int n, int m, int k, float* bar, float* A
 	eigen[2] = qi + 2 * p * (float)cos(phi + (2 * M_PI / 3));//eigenvalue 3
 	//eigen[1] = 3 * qi - eigen[0] - eigen[2];//eigenvalue 2
 
-	A[3] = A[1];
-	A[0] -= eigen[2];
-	A[4] -= eigen[2];
-	float aux = A[3] / A[0];
-	A[3] -= A[0] * aux;
-	A[4] -= A[1] * aux;
-	A[5] -= A[2] * aux;
-
+	float aux, modulo;
 	float eigenvector[3] = { 1.0f,1.0f,1.0f };
-	eigenvector[1] = -A[5] / A[4];
-	eigenvector[0] = -(A[1] * eigenvector[1] + A[2] * eigenvector[2]) / A[0];
+	A[3] = A[1];
+	A[6] = A[2];
+	A[7] = A[5];
+	A[0] -= eigen[2];//rx.x
+	if (fabs(A[0]) !=0)
+	{
+		A[4] -= eigen[2];//ry.y
+		aux = A[3] / A[0];
+		A[3] -= A[0] * aux;
+		A[4] -= A[1] * aux;
+		A[5] -= A[2] * aux;
 
-	normals[0 + i * 3] = eigenvector[0];
-	normals[1 + i * 3] = eigenvector[1];
-	normals[2 + i * 3] = eigenvector[2];
+		eigenvector[1] = -A[5] / A[4];
+		eigenvector[0] = -(A[1] * eigenvector[1] + A[2] * eigenvector[2]) / A[0];
+	}
+	else
+	{
+		/*A[8] -= eigen[2];//rz.z
+		A[4] -= eigen[2];//ry.y
+		aux = A[3] / A[6];
+		A[3] -= A[6] * aux;
+		A[4] -= A[7] * aux;
+		A[5] -= A[8] * aux;
+
+		eigenvector[1] = -A[5] / A[4];
+		eigenvector[0] = -(A[7] * eigenvector[1] + A[8] * eigenvector[2]) / A[6];*/
+	}
+	modulo = sqrt(eigenvector[0] * eigenvector[0] + eigenvector[1] * eigenvector[1] + eigenvector[2] * eigenvector[2]);
+	normals[0 + i * 3] = eigenvector[0] / modulo;
+	normals[1 + i * 3] = eigenvector[1] / modulo;
+	normals[2 + i * 3] = eigenvector[2] / modulo;
 }
 
 __global__
@@ -156,16 +199,26 @@ void Cxb(float* p, int n, float* q, int m, int* idx, float* normals, float* cn, 
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int stride = idx[i];
-	float* aux = (float*)malloc((size_t)n * sizeof(float));
 	cn[0 + i * 6] = p[1 + i * 3] * normals[2 + stride * 3] -
-		p[2 + i * 3] * normals[1 + stride * 3];//cix
+					p[2 + i * 3] * normals[1 + stride * 3];//cix
 	cn[1 + i * 6] = p[2 + i * 3] * normals[0 + stride * 3] -
-		p[0 + i * 3] * normals[2 + stride * 3];//ciy
+					p[0 + i * 3] * normals[2 + stride * 3];//ciy
 	cn[2 + i * 6] = p[0 + i * 3] * normals[1 + stride * 3] -
-		p[1 + i * 3] * normals[0 + stride * 3];//ciz
+					p[1 + i * 3] * normals[0 + stride * 3];//ciz
 	cn[3 + i * 6] = normals[0 + stride * 3];//nix
 	cn[4 + i * 6] = normals[1 + stride * 3];//niy
 	cn[5 + i * 6] = normals[2 + stride * 3];//niz
+	if (i == 215 || i == 216 || i == 1021) printf("%d: %d\n", i, stride);
+	if (i == 215)
+	{
+		printf("%d: %d\n", i, stride);
+		printf("py %d: %.4f\n", i, p[1 + i * 3]);
+		printf("pz %d: %.4f\n", i, p[2 + i * 3]);
+		printf("nz %d: %.4f\n", i, normals[2 + stride * 3]);
+		printf("ny %d: %.4f\n", i, normals[1 + stride * 3]);
+	}
+
+	__syncthreads();
 
 	C_total[0 + i * 21] = cn[0 + i * 6] * cn[0 + i * 6]; C_total[1 + i * 21] = cn[0 + i * 6] * cn[1 + i * 6]; C_total[2 + i * 21] = cn[0 + i * 6] * cn[2 + i * 6];
 	C_total[3 + i * 21] = cn[0 + i * 6] * cn[3 + i * 6]; C_total[4 + i * 21] = cn[0 + i * 6] * cn[4 + i * 6]; C_total[5 + i * 21] = cn[0 + i * 6] * cn[5 + i * 6];
@@ -175,12 +228,14 @@ void Cxb(float* p, int n, float* q, int m, int* idx, float* normals, float* cn, 
 	C_total[15 + i * 21] = cn[3 + i * 6] * cn[3 + i * 6]; C_total[16 + i * 21] = cn[3 + i * 6] * cn[4 + i * 6]; C_total[17 + i * 21] = cn[3 + i * 6] * cn[5 + i * 6];
 	C_total[18 + i * 21] = cn[4 + i * 6] * cn[4 + i * 6]; C_total[19 + i * 21] = cn[4 + i * 6] * cn[5 + i * 6]; C_total[20 + i * 21] = cn[5 + i * 6] * cn[5 + i * 6];
 
-	aux[i] = (p[0 + i * 3] - q[0 + i * 3]) * cn[3 + i * 6] +
-		(p[1 + i * 3] - q[1 + i * 3]) * cn[4 + i * 6] +
-		(p[2 + i * 3] - q[2 + i * 3]) * cn[5 + i * 6];
+	printf("%d: C[0] = %.3f\n", i, C_total[0 + i * 21]);
 
-	b_total[0 + i * 6] = cn[0 + i * 6] * aux[i]; b_total[1 + i * 6] = cn[1 + i * 6] * aux[i]; b_total[2 + i * 6] = cn[2 + i * 6] * aux[i];
-	b_total[3 + i * 6] = cn[3 + i * 6] * aux[i]; b_total[4 + i * 6] = cn[4 + i * 6] * aux[i]; b_total[5 + i * 6] = cn[5 + i * 6] * aux[i];
+	float aux = (p[0 + i * 3] - q[0 + stride * 3]) * cn[3 + i * 6] +
+				(p[1 + i * 3] - q[1 + stride * 3]) * cn[4 + i * 6] +
+				(p[2 + i * 3] - q[2 + stride * 3]) * cn[5 + i * 6];
+
+	b_total[0 + i * 6] = -cn[0 + i * 6] * aux; b_total[1 + i * 6] = -cn[1 + i * 6] * aux; b_total[2 + i * 6] = -cn[2 + i * 6] * aux;
+	b_total[3 + i * 6] = -cn[3 + i * 6] * aux; b_total[4 + i * 6] = -cn[4 + i * 6] * aux; b_total[5 + i * 6] = -cn[5 + i * 6] * aux;
 	__syncthreads();
 
 	for (int s = 1; s < n; s *= 2)//parallel reduction
@@ -196,6 +251,7 @@ void Cxb(float* p, int n, float* q, int m, int* idx, float* normals, float* cn, 
 			C_total[15 + i * 21] += C_total[15 + (i + s) * 21]; C_total[16 + i * 21] += C_total[16 + (i + s) * 21]; C_total[17 + i * 21] += C_total[17 + (i + s) * 21];
 			C_total[18 + i * 21] += C_total[18 + (i + s) * 21]; C_total[19 + i * 21] += C_total[19 + (i + s) * 21]; C_total[20 + i * 21] += C_total[20 + (i + s) * 21];
 
+			//printf("%d: C[0] = %.3f\n", i, C_total[0 + i * 21]);
 			//b
 			b_total[0 + i * 6] += b_total[0 + (i + s) * 6]; b_total[1 + i * 6] += b_total[1 + (i + s) * 6]; b_total[2 + i * 6] += b_total[2 + (i + s) * 6];
 			b_total[3 + i * 6] += b_total[3 + (i + s) * 6]; b_total[4 + i * 6] += b_total[4 + (i + s) * 6]; b_total[5 + i * 6] += b_total[5 + (i + s) * 6];
@@ -205,6 +261,7 @@ void Cxb(float* p, int n, float* q, int m, int* idx, float* normals, float* cn, 
 
 	if (i == 0)
 	{
+		printf("%d: C[0] = %.3f\n", i, C_total[0 + i * 21]);
 		//C
 		C[0] = C_total[0 + i * 21]; C[6] = C_total[1 + i * 21]; C[12] = C_total[2 + i * 21]; C[18] = C_total[3 + i * 21]; C[24] = C_total[4 + i * 21]; C[30] = C_total[5 + i * 21];
 		C[7] = C_total[6 + i * 21]; C[13] = C_total[7 + i * 21]; C[19] = C_total[8 + i * 21]; C[25] = C_total[9 + i * 21]; C[31] = C_total[10 + i * 21];
@@ -214,11 +271,32 @@ void Cxb(float* p, int n, float* q, int m, int* idx, float* normals, float* cn, 
 		C[35] = C_total[20 + i * 21];
 
 		//b
-		b[0] = b_total[0 + i * 6]; b[1] = b_total[1 + i * 6]; b[2] = b_total[2 + i * 6];
-		b[3] = b_total[3 + i * 6]; b[4] = b_total[4 + i * 6]; b[5] = b_total[5 + i * 6];
-		b[6] = b_total[6 + i * 6]; b[7] = b_total[7 + i * 6]; b[6] = b_total[0 + i * 6];
+		b[0] = -b_total[0 + i * 6]; b[1] = -b_total[1 + i * 6]; b[2] = -b_total[2 + i * 6];
+		b[3] = -b_total[3 + i * 6]; b[4] = -b_total[4 + i * 6]; b[5] = -b_total[5 + i * 6];
+		b[6] = -b_total[6 + i * 6]; b[7] = -b_total[7 + i * 6]; b[6] = -b_total[0 + i * 6];
 	}
-	free(aux);
+
+	/*C[0] += cn[0 + i * 6] * cn[0 + i * 6]; C[6] += cn[0 + i * 6] * cn[1 + i * 6]; C[12] += cn[0 + i * 6] * cn[2 + i * 6];
+	C[18] += cn[0 + i * 6] * cn[3 + i * 6]; C[24] += cn[0 + i * 6] * cn[4 + i * 6]; C[30] += cn[0 + i * 6] * cn[5 + i * 6];
+	
+	C[7] += cn[2 + i * 6] * cn[2 + i * 6]; C[13] += cn[1 + i * 6] * cn[2 + i * 6]; C[19] += cn[1 + i * 6] * cn[3 + i * 6];
+	C[25] += cn[1 + i * 6] * cn[4 + i * 6]; C[31] += cn[1 + i * 6] * cn[5 + i * 6];
+
+	C[14] += cn[2 + i * 6] * cn[2 + i * 6]; C[20] += cn[2 + i * 6] * cn[3 + i * 6]; C[26] += cn[2 + i * 6] * cn[4 + i * 6];
+	C[32] += cn[2 + i * 6] * cn[5 + i * 6];
+
+	C[21] += cn[3 + i * 6] * cn[3 + i * 6]; C[27] += cn[3 + i * 6] * cn[4 + i * 6]; C[33] += cn[3 + i * 6] * cn[5 + i * 6];
+
+	C[28] += cn[4 + i * 6] * cn[4 + i * 6]; C[34] += cn[4 + i * 6] * cn[5 + i * 6];
+
+	C[35] += cn[5 + i * 6] * cn[5 + i * 6];
+
+	float aux = (p[0 + i * 3] - q[0 + i * 3]) * cn[3 + i * 6] +
+				(p[1 + i * 3] - q[1 + i * 3]) * cn[4 + i * 6] +
+				(p[2 + i * 3] - q[2 + i * 3]) * cn[5 + i * 6];
+
+	b[0] += cn[0 + i * 6] * aux; b[1] += cn[1 + i * 6] * aux; b[2] += cn[2 + i * 6] * aux;
+	b[3] += cn[3 + i * 6] * aux; b[4] += cn[4 + i * 6] * aux; b[5] += cn[5 + i * 6] * aux;*/
 }
 
 __global__
@@ -257,7 +335,6 @@ void Error(int n, float* aux, float* D, float* M, int* idx, float* error, int it
 		//printf("Error: %f\n",error[iteration]);
 	}
 }
-
 
 int main(void)
 {
@@ -332,8 +409,8 @@ int main(void)
 	ti[2] = 0.2f;//z
 
 	//Rotation values (rad)
-	ri[0] = 0.1f;//axis x
-	ri[1] = -0.1f;//axis y
+	ri[0] = 0.2f;//axis x
+	ri[1] = -0.2f;//axis y
 	ri[2] = 0.05f;//axis z
 
 	float h_r[9] = {};
@@ -361,7 +438,7 @@ int main(void)
 		}
 	}
 	//printf("\nModel point cloud\n");
-	//printScloud(h_M, NUM_POINTS, NUM_POINTS);
+	//printScloud(h_M, m_points, m_points);
 
 	/////////End of 1st/////////
 
@@ -378,80 +455,65 @@ int main(void)
 	cudaMemcpy(d_p, h_D, bytesD, cudaMemcpyHostToDevice);//copy data cloud to p
 	cudaMemcpy(d_q, h_M, bytesM, cudaMemcpyHostToDevice);//copy model cloud to q
 	cudaError_t err = cudaSuccess;//for checking errors in kernels
+	//for measuring time
 	cudaEvent_t start, stop;
 	cudaEventCreate(&start);
 	cudaEventCreate(&stop);
+	float miliseconds = 0.0f;
 
 	/////////2nd: Normals estimation/////////
 	int GridSize = 8;
 	int BlockSize = q_points / GridSize;
 	printf("For normals:\nGrid Size: %d, Block Size: %d\n", GridSize, BlockSize);
 
+	k = 4;//number of nearest neighbors
 	int* d_NeighborIds = NULL;
 	float* d_dist = NULL;
-	size_t neighbors_size = (size_t)p_points * (size_t)q_points * sizeof(int);
+	size_t neighbors_size = (size_t)(k + 1) * (size_t)q_points * sizeof(int);
 	cudaMalloc(&d_NeighborIds, neighbors_size);
 	cudaMalloc(&d_dist, (size_t)p_points * (size_t)q_points * sizeof(float));
-	k = 4;//number of nearest neighbors
-	float* d_bar, *d_A;
-	cudaMalloc(&d_bar, (size_t)3* (size_t)q_points * sizeof(float));
+
+	float* d_bar, * d_A;
+	cudaMalloc(&d_bar, bytesM);
 	cudaMalloc(&d_A, (size_t)9 * (size_t)q_points * sizeof(float));
+	cudaMemset(d_bar, 0, bytesM);
+	cudaMemset(d_A, 0, (size_t)9 * (size_t)q_points * sizeof(float));
 
-	cudaError_t cudaStat = cudaSuccess;
+	float* d_normals = NULL;
+	cudaMalloc(&d_normals, bytesM);
 
-	float* d_normals;
-	cudaStat = cudaMalloc(&d_normals, bytesM);
-	if (cudaStat != cudaSuccess) {
-		printf("device memory allocation failed");
-		return EXIT_FAILURE;
-	}
-
-	cudaEventRecord(start);//start time normals estimation
+	cudaEventRecord(start);//start normals estimation
 	knn << < GridSize, BlockSize >> > (d_q, q_points, d_q, q_points, d_NeighborIds, k + 1, d_dist);
-	if (err != cudaSuccess)
-		printf("Error in knn kernel: %s\n", cudaGetErrorString(err));
-	cudaDeviceSynchronize();
+	err = cudaGetLastError();
+	if (err != cudaSuccess) printf("Error in knn kernel: %s\n", cudaGetErrorString(err));
 	/*int* h_NeighborIds = (int*)malloc(neighbors_size);
 	cudaMemcpy(h_NeighborIds, d_NeighborIds, neighbors_size, cudaMemcpyDeviceToHost);
 	printf("Neighbor IDs:\n");
 	for (i = 0; i < p_points; i++)
 	{
 		printf("%d: ", i + 1);
-		for (j = 0; j < k + 1; j++) printf("%d ", h_NeighborIds[j + i * q_points] + 1);
+		for (j = 0; j < k + 1; j++) printf("%d ", h_NeighborIds[j + i * (k + 1)] + 1);
 		printf("\n");
 	}
 	printf("\n");*/
-	cudaMemset(d_normals, 0.0f, bytesM);
+	Normals <<< GridSize, BlockSize >>> (d_q, d_NeighborIds, p_points, q_points, k, d_bar, d_A, d_normals);
+	err = cudaGetLastError();
+	if (err != cudaSuccess) printf("Error in normals kernel: %s\n", cudaGetErrorString(err));
+	cudaDeviceSynchronize();
 	float* h_normals = (float*)malloc(bytesM);
 	cudaMemcpy(h_normals, d_normals, bytesM, cudaMemcpyDeviceToHost);
 	printf("Normals:\n");
 	for (i = 0; i < q_points; i++)
 	{
 		printf("%d: ", i + 1);
-		for (j = 0; j < 3; j++) printf("%.3f ", h_normals[j + i * 3]);
+		for (j = 0; j < 3; j++) printf("%.4f ", h_normals[j + i * 3]);
 		printf("\n");
 	}
 	printf("\n");
-	Normals << < GridSize, BlockSize >> > (d_q, d_NeighborIds, p_points, q_points, k, d_bar, d_A, d_normals);
-	if (err != cudaSuccess)
-		printf("Error in normals kernel: %s\n", cudaGetErrorString(err));
-	cudaDeviceSynchronize();
-	cudaMemcpy(h_normals, d_normals, bytesM, cudaMemcpyDeviceToHost);
-	printf("Normals:\n");
-	for (i = 0; i < q_points; i++)
-	{
-		printf("%d: ", i + 1);
-		for (j = 0; j < 3; j++) printf("%.3f ", h_normals[j + i * 3]);
-		printf("\n");
-	}
-	printf("\n");
-
-	cudaEventRecord(stop);
+	cudaEventRecord(stop);//end normals estimation
 	cudaEventSynchronize(stop);
-	float miliseconds = 0;
 	cudaEventElapsedTime(&miliseconds, start, stop);
 	printf("Normals were calculated in %f ms\n\n", miliseconds);
-
 	/////////End of 2nd/////////
 
 	/////////3rd: ICP algorithm/////////
@@ -466,7 +528,7 @@ int main(void)
 
 	int* d_idx = NULL;//index vector (used for correspondence)
 	cudaMalloc(&d_idx, (size_t)p_points * sizeof(int));
-	//int* h_idx = (int*)malloc(D_size * sizeof(int));
+	//int* h_idx = (int*)malloc(p_points * sizeof(int));
 
 	float* d_temp_r = NULL;//temporary rotation matrix
 	float* d_temp_T = NULL;//temporary transalation vector
@@ -476,19 +538,22 @@ int main(void)
 	float* h_temp_T = (float*)malloc(sizeof(float) * 3);
 
 	float* d_error = NULL;
-	cudaMalloc(&d_error, (size_t)(MAX_ITER + 1) * sizeof(float));
-	cudaMemset(d_error, 0, (size_t)(MAX_ITER + 1) * sizeof(float));
-	//float* h_error = (float*)malloc((size_t)(MAX_ITER + 1) * sizeof(float));
+	cudaMalloc(&d_error, (size_t)MAX_ITER * sizeof(float));
+	cudaMemset(d_error, 0, (size_t)MAX_ITER * sizeof(float));
+	float* h_error = (float*)malloc((size_t)MAX_ITER * sizeof(float));
 
 	float* d_C = NULL, * d_b = NULL;//for the system of linear equations (minimization)
 	cudaMalloc(&d_C, 36 * sizeof(float));
 	cudaMemset(d_C, 0, 36 * sizeof(float));
 	cudaMalloc(&d_b, 6 * sizeof(float));
+	float* h_C = (float*)malloc(36 * sizeof(float));
 	float* h_b = (float*)malloc(6 * sizeof(float));
 	float* d_cn, * d_C_total, * d_b_total;
 	cudaMalloc(&d_cn, 6 * (size_t)p_points * sizeof(float));
 	cudaMalloc(&d_C_total, 21 * (size_t)p_points * sizeof(float));
 	cudaMalloc(&d_b_total, 6 * (size_t)p_points * sizeof(float));
+	cudaMemset(d_C_total, 0, 21 * (size_t)p_points * sizeof(float));
+	cudaMemset(d_b_total, 0, 6 * (size_t)p_points * sizeof(float));
 
 	//cuBLAS handle
 	cublasHandle_t cublasH;
@@ -509,20 +574,34 @@ int main(void)
 		Matching << <GridSize, BlockSize >> > (d_p, d_q, q_points, d_idx);
 		err = cudaGetLastError();
 		if (err != cudaSuccess)
-			printf("Error in matching kernel: %s\n", cudaGetErrorString(err));
+			printf("Error in matching kernel %d: %s\n", iteration, cudaGetErrorString(err));
 		cudaDeviceSynchronize();
-		/*cudaMemcpy(h_idx, d_idx, D_size*sizeof(int), cudaMemcpyDeviceToHost);
+		/*cudaMemcpy(h_idx, d_idx, p_points * sizeof(int), cudaMemcpyDeviceToHost);
 		printf("Index values:\n");
-		printIarray(h_idx, D_size);*/
+		printIarray(h_idx, p_points);*/
 		/////////////////end of Matching/////////////////
 
 		/////////////////Minimization step (point-to-plane)/////////////////
 
-		Cxb << < GridSize, BlockSize >> > (d_p, p_points, d_q, q_points, d_idx, d_normals, d_cn, d_C_total, d_b_total, d_C, d_b);
+		//cudaMemset(d_C_total, 0, 21 * p_points * sizeof(float));
+		//cudaMemset(d_b_total, 0, 6 * p_points *sizeof(float));
+		cudaMemset(d_C, 0, 36 * sizeof(float));
+		cudaMemset(d_b, 0, 6 * sizeof(float));
+		Cxb <<< GridSize, BlockSize >>> (d_p, p_points, d_q, q_points, d_idx, d_normals, d_cn, d_C_total, d_b_total, d_C, d_b);
 		err = cudaGetLastError();
 		if (err != cudaSuccess)
 			printf("Error in Cxb kernel: %s\n", cudaGetErrorString(err));
 		cudaDeviceSynchronize();
+
+		cudaMemcpy(h_C, d_C, 36 * sizeof(float), cudaMemcpyDeviceToHost);
+		cudaMemcpy(h_b, d_b, 6 * sizeof(float), cudaMemcpyDeviceToHost);
+
+		printf("C:\n");
+		for (i = 0; i < 6; i++)
+		{
+			for (j = 0; j < 6; j++) printf("%.3f ", h_C[i + j * 6]);
+			printf("\n");
+		}
 
 		//Allocate the buffer
 		cusolverDnSpotrf_bufferSize(cusolverH, CUBLAS_FILL_MODE_UPPER, 6, d_C, 6, &Lwork);
@@ -573,18 +652,22 @@ int main(void)
 	miliseconds = 0.0f;
 	cudaEventElapsedTime(&miliseconds, start, stop);
 	printf("Elapsed time: %f ms\n", miliseconds);
+
+	cudaMemcpy(h_error, d_error, MAX_ITER * sizeof(float), cudaMemcpyDeviceToHost);
+	printf("Error:\n");
+	printSarray(h_error, MAX_ITER);
 	/////////End of 3rd/////////
 
 	free(mesh_x), free(mesh_y), free(z);
 	free(h_M), free(h_D);
-	cudaFree(d_p), cudaFree(d_q), cudaFree(d_aux);
-	cudaFree(d_NeighborIds), cudaFree(d_dist);//free(h_NeighborIds);
+	cudaFree(d_p), cudaFree(d_q);// cudaFree(d_aux);
+	cudaFree(d_NeighborIds), cudaFree(d_dist); //free(h_NeighborIds);
 	cudaFree(d_bar), cudaFree(d_A);
-	cudaFree(d_normals);//free(h_normals)
+	cudaFree(d_normals);// free(h_normals);
 	cudaFree(d_idx); //free(h_idx);
-	cudaFree(d_error);
+	cudaFree(d_error); free(h_error);
 	cudaFree(d_work), cudaFree(devInfo);
-	cudaFree(d_C), cudaFree(d_b), free(h_b);
+	cudaFree(d_C), cudaFree(d_b), free(h_b); free(h_C);
 	cudaFree(d_cn), cudaFree(d_C_total), cudaFree(d_b_total);
 	cudaFree(d_temp_r), cudaFree(d_temp_T), free(h_temp_r), free(h_temp_T);
 
@@ -641,10 +724,9 @@ void printSarray(float* array, int points2show)
 //print vector with integer values
 void printIarray(int* array, int points2show)
 {
-	int i;
-	for (i = 0; i < points2show; i++)
+	for (int i = 0; i < points2show; i++)
 	{
-		printf("%d ", array[i]);
+		printf("%d: %d\n", i + 1, array[i]);
 	}
 	printf("\n");
 }
