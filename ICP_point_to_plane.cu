@@ -61,42 +61,38 @@ void knn(float* Dt, int n, float* M, int m, int* idx, int k, float* d)
 }
 
 __global__
-void Normals(float* q, int* neighbors, int n, int m, int k, float* normals)
+void Normals(float* q, int* neighbors, int n, int m, int k, float* bar, float* A_total, float* normals)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j = 0, stride = 0;
-	float bar[3] = {};
 
+	printf("%d\n", i);
 	//step 1: find the centroid of the k nearest neighbors
 	for (j = 1; j < k + 1; j++)
 	{
 		stride = neighbors[j + i * m];//neighbors are stored row-major
-		bar[0] += (q[0 + stride * 3] / (float)k);//q is stored colum-major (x1y1z1 ...)
-		bar[1] += (q[1 + stride * 3] / (float)k);
-		bar[2] += (q[2 + stride * 3] / (float)k);
+		bar[0 + 3 * i] += (q[0 + stride * 3] / (float)k);//q is stored colum-major (x1y1z1 ...)
+		bar[1 + 3 * i] += (q[1 + stride * 3] / (float)k);
+		bar[2 + 3 * i] += (q[2 + stride * 3] / (float)k);
 	}
+	for (j = 0; j < 3; j++) printf("bar%d[%d]: %.3f\n", j, i, bar[j + i * 3]);
 	__syncthreads();
-
-	float xi = 0.0f, yi = 0.0f, zi = 0.0f;
-	float A[9] = {};
 
 	//step 2: find the covariance matrix A
 	for (j = 1; j < k + 1; j++)
 	{
 		stride = neighbors[j + i * m];
-		xi = q[0 + stride * 3];
-		yi = q[1 + stride * 3];
-		zi = q[2 + stride * 3];
 		//place the values of the upper triangular matrix A only
-		A[0] += (xi - bar[0]) * (xi - bar[0]);
-		A[1] += (xi - bar[0]) * (yi - bar[1]);
-		A[2] += (xi - bar[0]) * (zi - bar[2]);
-		A[4] += (yi - bar[1]) * (yi - bar[1]);
-		A[5] += (yi - bar[1]) * (zi - bar[2]);
-		A[8] += (zi - bar[2]) * (zi - bar[2]);
+		A_total[0 + 9 * i] += (q[0 + stride * 3] - bar[0]) * (q[0 + stride * 3] - bar[0]);
+		A_total[1 + 9 * i] += (q[0 + stride * 3] - bar[0]) * (q[1 + stride * 3] - bar[1]);
+		A_total[2 + 9 * i] += (q[0 + stride * 3] - bar[0]) * (q[2 + stride * 3] - bar[2]);
+		A_total[4 + 9 * i] += (q[1 + stride * 3] - bar[1]) * (q[1 + stride * 3] - bar[1]);
+		A_total[5 + 9 * i] += (q[1 + stride * 3] - bar[1]) * (q[2 + stride * 3] - bar[2]);
+		A_total[8 + 9 * i] += (q[2 + stride * 3] - bar[2]) * (q[2 + stride * 3] - bar[2]);
 	}
 	__syncthreads();
 
+	float* A = A_total + i * 9;
 	//step 3: compute the eigenvectors of A
 	float p1 = A[1] * A[1] + A[2] * A[2] + A[5] * A[5];
 	float qi = 0.0f, p2 = 0.0f, p = 0.0f, r = 0.0f, phi = 0.0f;
@@ -162,11 +158,11 @@ void Cxb(float* p, int n, float* q, int m, int* idx, float* normals, float* cn, 
 	int stride = idx[i];
 	float* aux = (float*)malloc((size_t)n * sizeof(float));
 	cn[0 + i * 6] = p[1 + i * 3] * normals[2 + stride * 3] -
-					p[2 + i * 3] * normals[1 + stride * 3];//cix
+		p[2 + i * 3] * normals[1 + stride * 3];//cix
 	cn[1 + i * 6] = p[2 + i * 3] * normals[0 + stride * 3] -
-					p[0 + i * 3] * normals[2 + stride * 3];//ciy
+		p[0 + i * 3] * normals[2 + stride * 3];//ciy
 	cn[2 + i * 6] = p[0 + i * 3] * normals[1 + stride * 3] -
-					p[1 + i * 3] * normals[0 + stride * 3];//ciz
+		p[1 + i * 3] * normals[0 + stride * 3];//ciz
 	cn[3 + i * 6] = normals[0 + stride * 3];//nix
 	cn[4 + i * 6] = normals[1 + stride * 3];//niy
 	cn[5 + i * 6] = normals[2 + stride * 3];//niz
@@ -180,8 +176,8 @@ void Cxb(float* p, int n, float* q, int m, int* idx, float* normals, float* cn, 
 	C_total[18 + i * 21] = cn[4 + i * 6] * cn[4 + i * 6]; C_total[19 + i * 21] = cn[4 + i * 6] * cn[5 + i * 6]; C_total[20 + i * 21] = cn[5 + i * 6] * cn[5 + i * 6];
 
 	aux[i] = (p[0 + i * 3] - q[0 + i * 3]) * cn[3 + i * 6] +
-		 (p[1 + i * 3] - q[1 + i * 3]) * cn[4 + i * 6] +
-		 (p[2 + i * 3] - q[2 + i * 3]) * cn[5 + i * 6];
+		(p[1 + i * 3] - q[1 + i * 3]) * cn[4 + i * 6] +
+		(p[2 + i * 3] - q[2 + i * 3]) * cn[5 + i * 6];
 
 	b_total[0 + i * 6] = cn[0 + i * 6] * aux[i]; b_total[1 + i * 6] = cn[1 + i * 6] * aux[i]; b_total[2 + i * 6] = cn[2 + i * 6] * aux[i];
 	b_total[3 + i * 6] = cn[3 + i * 6] * aux[i]; b_total[4 + i * 6] = cn[4 + i * 6] * aux[i]; b_total[5 + i * 6] = cn[5 + i * 6] * aux[i];
@@ -206,7 +202,7 @@ void Cxb(float* p, int n, float* q, int m, int* idx, float* normals, float* cn, 
 		}
 		__syncthreads();
 	}
-	
+
 	if (i == 0)
 	{
 		//C
@@ -216,11 +212,11 @@ void Cxb(float* p, int n, float* q, int m, int* idx, float* normals, float* cn, 
 		C[21] = C_total[15 + i * 21]; C[27] = C_total[16 + i * 21]; C[33] = C_total[17 + i * 21];
 		C[28] = C_total[18 + i * 21]; C[34] = C_total[19 + i * 21];
 		C[35] = C_total[20 + i * 21];
-		
+
 		//b
 		b[0] = b_total[0 + i * 6]; b[1] = b_total[1 + i * 6]; b[2] = b_total[2 + i * 6];
 		b[3] = b_total[3 + i * 6]; b[4] = b_total[4 + i * 6]; b[5] = b_total[5 + i * 6];
-		b[6] = b_total[6 + i * 6]; b[7] = b_total[7+ i * 6]; b[6] = b_total[0 + i * 6];
+		b[6] = b_total[6 + i * 6]; b[7] = b_total[7 + i * 6]; b[6] = b_total[0 + i * 6];
 	}
 	free(aux);
 }
@@ -331,13 +327,13 @@ int main(void)
 	//printScloud(h_D, num_points, num_points);
 
 	//Translation values
-	ti[0] = 1.0f;//x
+	ti[0] = 0.8f;//x
 	ti[1] = -0.3f;//y
 	ti[2] = 0.2f;//z
 
 	//Rotation values (rad)
-	ri[0] = 1.0f;//axis x
-	ri[1] = -0.5f;//axis y
+	ri[0] = 0.1f;//axis x
+	ri[1] = -0.1f;//axis y
 	ri[2] = 0.05f;//axis z
 
 	float h_r[9] = {};
@@ -397,9 +393,18 @@ int main(void)
 	cudaMalloc(&d_NeighborIds, neighbors_size);
 	cudaMalloc(&d_dist, (size_t)p_points * (size_t)q_points * sizeof(float));
 	k = 4;//number of nearest neighbors
+	float* d_bar, *d_A;
+	cudaMalloc(&d_bar, (size_t)3* (size_t)q_points * sizeof(float));
+	cudaMalloc(&d_A, (size_t)9 * (size_t)q_points * sizeof(float));
+
+	cudaError_t cudaStat = cudaSuccess;
 
 	float* d_normals;
-	cudaMalloc(&d_normals, 3 * (size_t)q_points * sizeof(float));
+	cudaStat = cudaMalloc(&d_normals, bytesM);
+	if (cudaStat != cudaSuccess) {
+		printf("device memory allocation failed");
+		return EXIT_FAILURE;
+	}
 
 	cudaEventRecord(start);//start time normals estimation
 	knn << < GridSize, BlockSize >> > (d_q, q_points, d_q, q_points, d_NeighborIds, k + 1, d_dist);
@@ -416,11 +421,8 @@ int main(void)
 		printf("\n");
 	}
 	printf("\n");*/
-	Normals << < GridSize, BlockSize >> > (d_q, d_NeighborIds, p_points, q_points, k, d_normals);
-	if (err != cudaSuccess)
-		printf("Error in normals kernel: %s\n", cudaGetErrorString(err));
-	cudaDeviceSynchronize();
-	/*float* h_normals = (float*)malloc(bytesM);
+	cudaMemset(d_normals, 0.0f, bytesM);
+	float* h_normals = (float*)malloc(bytesM);
 	cudaMemcpy(h_normals, d_normals, bytesM, cudaMemcpyDeviceToHost);
 	printf("Normals:\n");
 	for (i = 0; i < q_points; i++)
@@ -429,7 +431,20 @@ int main(void)
 		for (j = 0; j < 3; j++) printf("%.3f ", h_normals[j + i * 3]);
 		printf("\n");
 	}
-	printf("\n");*/
+	printf("\n");
+	Normals << < GridSize, BlockSize >> > (d_q, d_NeighborIds, p_points, q_points, k, d_bar, d_A, d_normals);
+	if (err != cudaSuccess)
+		printf("Error in normals kernel: %s\n", cudaGetErrorString(err));
+	cudaDeviceSynchronize();
+	cudaMemcpy(h_normals, d_normals, bytesM, cudaMemcpyDeviceToHost);
+	printf("Normals:\n");
+	for (i = 0; i < q_points; i++)
+	{
+		printf("%d: ", i + 1);
+		for (j = 0; j < 3; j++) printf("%.3f ", h_normals[j + i * 3]);
+		printf("\n");
+	}
+	printf("\n");
 
 	cudaEventRecord(stop);
 	cudaEventSynchronize(stop);
@@ -564,6 +579,7 @@ int main(void)
 	free(h_M), free(h_D);
 	cudaFree(d_p), cudaFree(d_q), cudaFree(d_aux);
 	cudaFree(d_NeighborIds), cudaFree(d_dist);//free(h_NeighborIds);
+	cudaFree(d_bar), cudaFree(d_A);
 	cudaFree(d_normals);//free(h_normals)
 	cudaFree(d_idx); //free(h_idx);
 	cudaFree(d_error);
