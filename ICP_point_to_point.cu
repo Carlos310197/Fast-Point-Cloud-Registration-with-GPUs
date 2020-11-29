@@ -55,7 +55,7 @@ void centroid(float* D, float* M, int* idx, float* barD, float* barM, float* dev
 	devD[1 + i * 3] = D[1 + i * 3];
 	devD[2 + i * 3] = D[2 + i * 3];
 
-	//copy M cloud to devM using the correspondence found in the matching step(idx)
+	//copy M cloud to devM using the correspondence(idx)
 	devM[0 + i * 3] = M[0 + idx[i] * 3];
 	devM[1 + i * 3] = M[1 + idx[i] * 3];
 	devM[2 + i * 3] = M[2 + idx[i] * 3];
@@ -111,6 +111,7 @@ __global__
 void RyT(float* R, float* T, float* P, float* Q)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	int n = NUM_POINTS;
 	Q[0 + i * 3] = R[0 + 0 * 3] * P[0 + i * 3] + R[0 + 1 * 3] * P[1 + i * 3] + R[0 + 2 * 3] * P[2 + i * 3] + T[0];
 	Q[1 + i * 3] = R[1 + 0 * 3] * P[0 + i * 3] + R[1 + 1 * 3] * P[1 + i * 3] + R[1 + 2 * 3] * P[2 + i * 3] + T[1];
 	Q[2 + i * 3] = R[2 + 0 * 3] * P[0 + i * 3] + R[2 + 1 * 3] * P[1 + i * 3] + R[2 + 2 * 3] * P[2 + i * 3] + T[2];
@@ -310,11 +311,8 @@ int main()
 	cudaMalloc(&d_VT, sizeof(float) * 9);
 	cudaMalloc(&devInfo, sizeof(int));
 	cudaMalloc(&d_W, sizeof(float) * 9);
-	
-	//cuSolver handle
-	cusolverDnHandle_t cusolverH;
+	cusolverDnHandle_t cusolverH;//cuSolver handle
 	cusolverDnCreate(&cusolverH);
-	
 	cusolverDnDgesvd_bufferSize(cusolverH, 3, 3, &lwork);
 	cudaMalloc((void**)&d_work, sizeof(float) * lwork);
 
