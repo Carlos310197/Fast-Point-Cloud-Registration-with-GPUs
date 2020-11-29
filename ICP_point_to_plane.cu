@@ -12,6 +12,8 @@
 #include <cublas_v2.h>
 #include <curand.h>
 #include <cusolverDn.h>
+#include "mkl.h"
+#include "mkl_lapacke.h"
 //#include <device_functions.h>
 
 //constants
@@ -143,33 +145,33 @@ void Normals(float* q, int* neighbors, int n, int m, int k, float* bar, float* A
 
 	float aux, modulo;
 	float eigenvector[3] = { 1.0f,1.0f,1.0f };
-	A[3] = A[1];
-	A[6] = A[2];
-	A[7] = A[5];
-	A[0] -= eigen[2];//rx.x
-	if (fabs(A[0]) !=0)
-	{
-		A[4] -= eigen[2];//ry.y
-		aux = A[3] / A[0];
-		A[3] -= A[0] * aux;
-		A[4] -= A[1] * aux;
-		A[5] -= A[2] * aux;
+	//A[3] = A[1];
+	//A[6] = A[2];
+	//A[7] = A[5];
+	//A[0] -= eigen[2];//rx.x
+	//if (fabs(A[0]) !=0)
+	//{
+	//	A[4] -= eigen[2];//ry.y
+	//	aux = A[3] / A[0];
+	//	A[3] -= A[0] * aux;
+	//	A[4] -= A[1] * aux;
+	//	A[5] -= A[2] * aux;
 
-		eigenvector[1] = -A[5] / A[4];
-		eigenvector[0] = -(A[1] * eigenvector[1] + A[2] * eigenvector[2]) / A[0];
-	}
-	else
-	{
-		/*A[8] -= eigen[2];//rz.z
-		A[4] -= eigen[2];//ry.y
-		aux = A[3] / A[6];
-		A[3] -= A[6] * aux;
-		A[4] -= A[7] * aux;
-		A[5] -= A[8] * aux;
+	//	eigenvector[1] = -A[5] / A[4];
+	//	eigenvector[0] = -(A[1] * eigenvector[1] + A[2] * eigenvector[2]) / A[0];
+	//}
+	//else
+	//{
+	//	/*A[8] -= eigen[2];//rz.z
+	//	A[4] -= eigen[2];//ry.y
+	//	aux = A[3] / A[6];
+	//	A[3] -= A[6] * aux;
+	//	A[4] -= A[7] * aux;
+	//	A[5] -= A[8] * aux;
 
-		eigenvector[1] = -A[5] / A[4];
-		eigenvector[0] = -(A[7] * eigenvector[1] + A[8] * eigenvector[2]) / A[6];*/
-	}
+	//	eigenvector[1] = -A[5] / A[4];
+	//	eigenvector[0] = -(A[7] * eigenvector[1] + A[8] * eigenvector[2]) / A[6];*/
+	//}
 	modulo = sqrt(eigenvector[0] * eigenvector[0] + eigenvector[1] * eigenvector[1] + eigenvector[2] * eigenvector[2]);
 	normals[0 + i * 3] = eigenvector[0] / modulo;
 	normals[1 + i * 3] = eigenvector[1] / modulo;
@@ -198,26 +200,17 @@ __global__
 void Cxb(float* p, int n, float* q, int m, int* idx, float* normals, float* cn, float* C_total, float* b_total, float* C, float* b)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	int stride = idx[i];
-	cn[0 + i * 6] = p[1 + i * 3] * normals[2 + stride * 3] -
-					p[2 + i * 3] * normals[1 + stride * 3];//cix
-	cn[1 + i * 6] = p[2 + i * 3] * normals[0 + stride * 3] -
-					p[0 + i * 3] * normals[2 + stride * 3];//ciy
-	cn[2 + i * 6] = p[0 + i * 3] * normals[1 + stride * 3] -
-					p[1 + i * 3] * normals[0 + stride * 3];//ciz
-	cn[3 + i * 6] = normals[0 + stride * 3];//nix
-	cn[4 + i * 6] = normals[1 + stride * 3];//niy
-	cn[5 + i * 6] = normals[2 + stride * 3];//niz
-	if (i == 215 || i == 216 || i == 1021) printf("%d: %d\n", i, stride);
-	if (i == 215)
-	{
-		printf("%d: %d\n", i, stride);
-		printf("py %d: %.4f\n", i, p[1 + i * 3]);
-		printf("pz %d: %.4f\n", i, p[2 + i * 3]);
-		printf("nz %d: %.4f\n", i, normals[2 + stride * 3]);
-		printf("ny %d: %.4f\n", i, normals[1 + stride * 3]);
-	}
-
+	//int stride = idx[i];
+	cn[0 + i * 6] = p[1 + i * 3] * normals[2 + idx[i] * 3] -
+					p[2 + i * 3] * normals[1 + idx[i] * 3];//cix
+	cn[1 + i * 6] = p[2 + i * 3] * normals[0 + idx[i] * 3] -
+					p[0 + i * 3] * normals[2 + idx[i] * 3];//ciy
+	cn[2 + i * 6] = p[0 + i * 3] * normals[1 + idx[i] * 3] -
+					p[1 + i * 3] * normals[0 + idx[i] * 3];//ciz
+	cn[3 + i * 6] = normals[0 + idx[i] * 3];//nix
+	cn[4 + i * 6] = normals[1 + idx[i] * 3];//niy
+	cn[5 + i * 6] = normals[2 + idx[i] * 3];//niz
+	printf("%d: cn[0] = %.3f\n", i, C_total[0 + i * 21]);
 	__syncthreads();
 
 	C_total[0 + i * 21] = cn[0 + i * 6] * cn[0 + i * 6]; C_total[1 + i * 21] = cn[0 + i * 6] * cn[1 + i * 6]; C_total[2 + i * 21] = cn[0 + i * 6] * cn[2 + i * 6];
@@ -228,11 +221,11 @@ void Cxb(float* p, int n, float* q, int m, int* idx, float* normals, float* cn, 
 	C_total[15 + i * 21] = cn[3 + i * 6] * cn[3 + i * 6]; C_total[16 + i * 21] = cn[3 + i * 6] * cn[4 + i * 6]; C_total[17 + i * 21] = cn[3 + i * 6] * cn[5 + i * 6];
 	C_total[18 + i * 21] = cn[4 + i * 6] * cn[4 + i * 6]; C_total[19 + i * 21] = cn[4 + i * 6] * cn[5 + i * 6]; C_total[20 + i * 21] = cn[5 + i * 6] * cn[5 + i * 6];
 
-	printf("%d: C[0] = %.3f\n", i, C_total[0 + i * 21]);
+	//printf("%d: C[0] = %.3f\n", i, C_total[0 + i * 21]);
 
-	float aux = (p[0 + i * 3] - q[0 + stride * 3]) * cn[3 + i * 6] +
-				(p[1 + i * 3] - q[1 + stride * 3]) * cn[4 + i * 6] +
-				(p[2 + i * 3] - q[2 + stride * 3]) * cn[5 + i * 6];
+	float aux = (p[0 + i * 3] - q[0 + idx[i] * 3]) * cn[3 + i * 6] +
+				(p[1 + i * 3] - q[1 + idx[i] * 3]) * cn[4 + i * 6] +
+				(p[2 + i * 3] - q[2 + idx[i] * 3]) * cn[5 + i * 6];
 
 	b_total[0 + i * 6] = -cn[0 + i * 6] * aux; b_total[1 + i * 6] = -cn[1 + i * 6] * aux; b_total[2 + i * 6] = -cn[2 + i * 6] * aux;
 	b_total[3 + i * 6] = -cn[3 + i * 6] * aux; b_total[4 + i * 6] = -cn[4 + i * 6] * aux; b_total[5 + i * 6] = -cn[5 + i * 6] * aux;
@@ -261,7 +254,7 @@ void Cxb(float* p, int n, float* q, int m, int* idx, float* normals, float* cn, 
 
 	if (i == 0)
 	{
-		printf("%d: C[0] = %.3f\n", i, C_total[0 + i * 21]);
+		//printf("%d: C[0] = %.3f\n", i, C_total[0 + i * 21]);
 		//C
 		C[0] = C_total[0 + i * 21]; C[6] = C_total[1 + i * 21]; C[12] = C_total[2 + i * 21]; C[18] = C_total[3 + i * 21]; C[24] = C_total[4 + i * 21]; C[30] = C_total[5 + i * 21];
 		C[7] = C_total[6 + i * 21]; C[13] = C_total[7 + i * 21]; C[19] = C_total[8 + i * 21]; C[25] = C_total[9 + i * 21]; C[31] = C_total[10 + i * 21];
@@ -271,32 +264,10 @@ void Cxb(float* p, int n, float* q, int m, int* idx, float* normals, float* cn, 
 		C[35] = C_total[20 + i * 21];
 
 		//b
-		b[0] = -b_total[0 + i * 6]; b[1] = -b_total[1 + i * 6]; b[2] = -b_total[2 + i * 6];
-		b[3] = -b_total[3 + i * 6]; b[4] = -b_total[4 + i * 6]; b[5] = -b_total[5 + i * 6];
-		b[6] = -b_total[6 + i * 6]; b[7] = -b_total[7 + i * 6]; b[6] = -b_total[0 + i * 6];
+		b[0] = b_total[0 + i * 6]; b[1] = b_total[1 + i * 6]; b[2] = b_total[2 + i * 6];
+		b[3] = b_total[3 + i * 6]; b[4] = b_total[4 + i * 6]; b[5] = b_total[5 + i * 6];
+		b[6] = b_total[6 + i * 6]; b[7] = b_total[7 + i * 6]; b[6] = b_total[0 + i * 6];
 	}
-
-	/*C[0] += cn[0 + i * 6] * cn[0 + i * 6]; C[6] += cn[0 + i * 6] * cn[1 + i * 6]; C[12] += cn[0 + i * 6] * cn[2 + i * 6];
-	C[18] += cn[0 + i * 6] * cn[3 + i * 6]; C[24] += cn[0 + i * 6] * cn[4 + i * 6]; C[30] += cn[0 + i * 6] * cn[5 + i * 6];
-	
-	C[7] += cn[2 + i * 6] * cn[2 + i * 6]; C[13] += cn[1 + i * 6] * cn[2 + i * 6]; C[19] += cn[1 + i * 6] * cn[3 + i * 6];
-	C[25] += cn[1 + i * 6] * cn[4 + i * 6]; C[31] += cn[1 + i * 6] * cn[5 + i * 6];
-
-	C[14] += cn[2 + i * 6] * cn[2 + i * 6]; C[20] += cn[2 + i * 6] * cn[3 + i * 6]; C[26] += cn[2 + i * 6] * cn[4 + i * 6];
-	C[32] += cn[2 + i * 6] * cn[5 + i * 6];
-
-	C[21] += cn[3 + i * 6] * cn[3 + i * 6]; C[27] += cn[3 + i * 6] * cn[4 + i * 6]; C[33] += cn[3 + i * 6] * cn[5 + i * 6];
-
-	C[28] += cn[4 + i * 6] * cn[4 + i * 6]; C[34] += cn[4 + i * 6] * cn[5 + i * 6];
-
-	C[35] += cn[5 + i * 6] * cn[5 + i * 6];
-
-	float aux = (p[0 + i * 3] - q[0 + i * 3]) * cn[3 + i * 6] +
-				(p[1 + i * 3] - q[1 + i * 3]) * cn[4 + i * 6] +
-				(p[2 + i * 3] - q[2 + i * 3]) * cn[5 + i * 6];
-
-	b[0] += cn[0 + i * 6] * aux; b[1] += cn[1 + i * 6] * aux; b[2] += cn[2 + i * 6] * aux;
-	b[3] += cn[3 + i * 6] * aux; b[4] += cn[4 + i * 6] * aux; b[5] += cn[5 + i * 6] * aux;*/
 }
 
 __global__
@@ -476,6 +447,7 @@ int main(void)
 	float* d_bar, * d_A;
 	cudaMalloc(&d_bar, bytesM);
 	cudaMalloc(&d_A, (size_t)9 * (size_t)q_points * sizeof(float));
+	float* h_A = (float*)malloc((size_t)9 * (size_t)q_points * sizeof(float));
 	cudaMemset(d_bar, 0, bytesM);
 	cudaMemset(d_A, 0, (size_t)9 * (size_t)q_points * sizeof(float));
 
@@ -500,20 +472,32 @@ int main(void)
 	err = cudaGetLastError();
 	if (err != cudaSuccess) printf("Error in normals kernel: %s\n", cudaGetErrorString(err));
 	cudaDeviceSynchronize();
-	float* h_normals = (float*)malloc(bytesM);
-	cudaMemcpy(h_normals, d_normals, bytesM, cudaMemcpyDeviceToHost);
-	printf("Normals:\n");
-	for (i = 0; i < q_points; i++)
-	{
-		printf("%d: ", i + 1);
-		for (j = 0; j < 3; j++) printf("%.4f ", h_normals[j + i * 3]);
-		printf("\n");
-	}
+
 	printf("\n");
 	cudaEventRecord(stop);//end normals estimation
 	cudaEventSynchronize(stop);
 	cudaEventElapsedTime(&miliseconds, start, stop);
 	printf("Normals were calculated in %f ms\n\n", miliseconds);
+
+	float w[3] = {};
+	int idx_min = 0;
+	cudaMemcpy(h_A, d_A, 9 * q_points * sizeof(float), cudaMemcpyDeviceToHost);
+	float* h_normals = (float*)malloc(bytesM);
+	for (i = 0; i < q_points; i++)
+	{
+		float* A = h_A + i * 9;
+		LAPACKE_ssyev(LAPACK_ROW_MAJOR, 'V', 'U', 3, A, 3, w);
+		idx_min = (int)cblas_isamin(3, w, 1);//choose the smallest eigenvalue
+		for (j = 0; j < 3; j++) h_normals[j + i * 3] = A[j * 3 + idx_min];
+	}
+	cudaMemcpy(d_normals, h_normals, bytesM, cudaMemcpyHostToDevice);
+	/*printf("Normals:\n");
+	for (i = 0; i < q_points; i++)
+	{
+		printf("%d: ", i + 1);
+		for (j = 0; j < 3; j++) printf("%.4f ", h_normals[j + i * 3]);
+		printf("\n");
+	}*/
 	/////////End of 2nd/////////
 
 	/////////3rd: ICP algorithm/////////
@@ -583,8 +567,8 @@ int main(void)
 
 		/////////////////Minimization step (point-to-plane)/////////////////
 
-		//cudaMemset(d_C_total, 0, 21 * p_points * sizeof(float));
-		//cudaMemset(d_b_total, 0, 6 * p_points *sizeof(float));
+		cudaMemset(d_C_total, 0, 21 * p_points * sizeof(float));
+		cudaMemset(d_b_total, 0, 6 * p_points *sizeof(float));
 		cudaMemset(d_C, 0, 36 * sizeof(float));
 		cudaMemset(d_b, 0, 6 * sizeof(float));
 		Cxb <<< GridSize, BlockSize >>> (d_p, p_points, d_q, q_points, d_idx, d_normals, d_cn, d_C_total, d_b_total, d_C, d_b);
