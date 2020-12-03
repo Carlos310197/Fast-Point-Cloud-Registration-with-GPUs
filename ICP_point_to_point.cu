@@ -1,5 +1,8 @@
-//For debugging:
-//nvcc ICP_standard.cu -lcublas -lcurand -lcusolver -o ICP_cuda
+//ICP algorithm using the point-to-point error metric and synthetic data
+//GPU version using CUDA and CUDA APIs
+//By: Carlos Huapaya
+//Libraries to include: cublas.lib, curand.lib, cusolver.lib
+//For compiling linux:nvcc ICP_standard.cu -lcublas -lcurand -lcusolver -o ICP_cuda
 
 #include <stdio.h>
 #include <stdlib.h>
