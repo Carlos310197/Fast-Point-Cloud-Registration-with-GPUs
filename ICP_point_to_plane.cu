@@ -17,10 +17,10 @@
 //#include <device_functions.h>
 
 //constants
-#define WIDTH 32
+#define WIDTH 128
 #define XY_min -2.0
 #define XY_max 2.0
-#define MAX_ITER 1
+#define MAX_ITER 50
 
 void SmatrixMul(float* A, float* B, float* C, int m, int n, int k);
 void printScloud(float* cloud, int num_points, int points2show);
@@ -194,38 +194,43 @@ __global__
 void Cxb(float* p, float* q, int* idx, float* normals, float* cn, float* C_total, float* b_total)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	//int stride = idx[i];
-	cn[0 + i * 6] = p[1 + i * 3] * normals[2 + idx[i] * 3] -
-		p[2 + i * 3] * normals[1 + idx[i] * 3];//cix
-	cn[1 + i * 6] = p[2 + i * 3] * normals[0 + idx[i] * 3] -
-		p[0 + i * 3] * normals[2 + idx[i] * 3];//ciy
-	cn[2 + i * 6] = p[0 + i * 3] * normals[1 + idx[i] * 3] -
-		p[1 + i * 3] * normals[0 + idx[i] * 3];//ciz
-	cn[3 + i * 6] = normals[0 + idx[i] * 3];//nix
-	cn[4 + i * 6] = normals[1 + idx[i] * 3];//niy
-	cn[5 + i * 6] = normals[2 + idx[i] * 3];//niz
+	float cix, ciy, ciz;
+	float nix, niy, niz;
 
-	C_total[0 + i * 36] = cn[0 + i * 6] * cn[0 + i * 6]; C_total[6 + i * 36] = cn[0 + i * 6] * cn[1 + i * 6]; C_total[12 + i * 36] = cn[0 + i * 6] * cn[2 + i * 6];
-	C_total[18 + i * 36] = cn[0 + i * 6] * cn[3 + i * 6]; C_total[24 + i * 36] = cn[0 + i * 6] * cn[4 + i * 6]; C_total[30 + i * 36] = cn[0 + i * 6] * cn[5 + i * 6];
+	cix = p[1 + i * 3] * normals[2 + idx[i] * 3] -
+		  p[2 + i * 3] * normals[1 + idx[i] * 3];//cix
+	ciy = p[2 + i * 3] * normals[0 + idx[i] * 3] -
+		  p[0 + i * 3] * normals[2 + idx[i] * 3];//ciy
+	ciz = p[0 + i * 3] * normals[1 + idx[i] * 3] -
+		  p[1 + i * 3] * normals[0 + idx[i] * 3];//ciz++
 
-	C_total[7 + i * 36] = cn[1 + i * 6] * cn[1 + i * 6]; C_total[13 + i * 36] = cn[1 + i * 6] * cn[2 + i * 6]; C_total[19 + i * 36] = cn[1 + i * 6] * cn[3 + i * 6];
-	C_total[25 + i * 36] = cn[1 + i * 6] * cn[4 + i * 6]; C_total[31 + i * 36] = cn[1 + i * 6] * cn[5 + i * 6];
+	/*printf("cix[%d] = %.4f\n", i + 1, cix);
+	printf("ciy[%d] = %.4f\n", i + 1, ciy);
+	printf("ciz[%d] = %.4f\n", i + 1, ciz);*/
 
-	C_total[14 + i * 36] = cn[2 + i * 6] * cn[2 + i * 6]; C_total[20 + i * 36] = cn[2 + i * 6] * cn[3 + i * 6]; C_total[26 + i * 36] = cn[2 + i * 6] * cn[4 + i * 6];
-	C_total[32 + i * 36] = cn[2 + i * 6] * cn[5 + i * 6];
+	nix = normals[0 + idx[i] * 3];//nix
+	niy = normals[1 + idx[i] * 3];//niy
+	niz = normals[2 + idx[i] * 3];//niz
 
-	C_total[21 + i * 36] = cn[3 + i * 6] * cn[3 + i * 6]; C_total[27 + i * 36] = cn[3 + i * 6] * cn[4 + i * 6]; C_total[33 + i * 36] = cn[3 + i * 6] * cn[5 + i * 6];
+	C_total[0 + i * 36] = cix * cix; C_total[6 + i * 36] = cix * ciy; C_total[12 + i * 36] = cix * ciz;
+	C_total[18 + i * 36] = cix * nix; C_total[24 + i * 36] = cix * niy; C_total[30 + i * 36] = cix * niz;
 
-	C_total[28 + i * 36] = cn[4 + i * 6] * cn[4 + i * 6]; C_total[34 + i * 36] = cn[4 + i * 6] * cn[5 + i * 6];
+	C_total[7 + i * 36] = ciy * ciy; C_total[13 + i * 36] = ciy * ciz; C_total[19 + i * 36] = ciy * nix;
+	C_total[25 + i * 36] = ciy * niy; C_total[31 + i * 36] = ciy * niz;
 
-	C_total[35 + i * 36] = cn[5 + i * 6] * cn[5 + i * 6];
+	C_total[14 + i * 36] = ciz * ciz; C_total[20 + i * 36] = ciz * nix; C_total[26 + i * 36] = ciz * niy;
+	C_total[32 + i * 36] = ciz * niz;
 
-	float aux = (p[0 + i * 3] - q[0 + i * 3]) * cn[3 + i * 6] +
-		(p[1 + i * 3] - q[1 + i * 3]) * cn[4 + i * 6] +
-		(p[2 + i * 3] - q[2 + i * 3]) * cn[5 + i * 6];
+	C_total[21 + i * 36] = nix * nix; C_total[27 + i * 36] = nix * niy; C_total[33 + i * 36] = nix * niz;
 
-	b_total[0 + i * 6] = -cn[0 + i * 6] * aux; b_total[1 + i * 6] = -cn[1 + i * 6] * aux; b_total[2 + i * 6] = -cn[2 + i * 6] * aux;
-	b_total[3 + i * 6] = -cn[3 + i * 6] * aux; b_total[4 + i * 6] = -cn[4 + i * 6] * aux; b_total[5 + i * 6] = -cn[5 + i * 6] * aux;
+	C_total[28 + i * 36] = niy * niy; C_total[34 + i * 36] = niy * niz;
+
+	C_total[35 + i * 36] = niz * niz;
+
+	float aux = (p[0 + i * 3] - q[0 + i * 3]) * nix + (p[1 + i * 3] - q[1 + i * 3]) * niy + (p[2 + i * 3] - q[2 + i * 3]) * niz;
+
+	b_total[0 + i * 6] = -cix * aux; b_total[1 + i * 6] = -ciy * aux; b_total[2 + i * 6] = -ciz * aux;
+	b_total[3 + i * 6] = -nix * aux; b_total[4 + i * 6] = -niy * aux; b_total[5 + i * 6] = -niz * aux;
 }
 
 __global__
@@ -371,7 +376,7 @@ int main(void)
 	cusolverStatus_t cusolver_error;
 
 	/////////2nd: Normals estimation/////////
-	int GridSize = 8;
+	int GridSize = 16;
 	int BlockSize = q_points / GridSize;
 	printf("For normals:\nGrid Size: %d, Block Size: %d\n", GridSize, BlockSize);
 
@@ -432,13 +437,13 @@ int main(void)
 		for (j = 0; j < 3; j++) h_normals[j + i * 3] = A[j * 3 + idx_min];
 	}
 	cudaMemcpy(d_normals, h_normals, bytesM, cudaMemcpyHostToDevice);
-	printf("Normals:\n");
+	/*printf("Normals:\n");
 	for (i = 0; i < q_points; i++)
 	{
 		printf("%d: ", i + 1);
 		for (j = 0; j < 3; j++) printf("%.4f ", h_normals[j + i * 3]);
 		printf("\n");
-	}
+	}*/
 	/////////End of 2nd/////////
 
 	free(h_NeighborIds), cudaFree(d_NeighborIds), cudaFree(d_dist);
@@ -503,7 +508,7 @@ int main(void)
 
 	float alpha = 0, beta = 0;//for cublas routines
 
-	GridSize = 8;
+	GridSize = 16;
 	BlockSize = p_points / GridSize;
 	printf("For ICP loop:\nGrid Size: %d, Block Size: %d\n", GridSize, BlockSize);
 
@@ -558,14 +563,14 @@ int main(void)
 		cudaMemcpy(h_C, d_C, 36 * sizeof(float), cudaMemcpyDeviceToHost);
 		cudaMemcpy(h_b, d_b, 6 * sizeof(float), cudaMemcpyDeviceToHost);
 
-		printf("C[%d]:\n", iteration + 1);
+		/*printf("C[%d]:\n", iteration + 1);
 		for (i = 0; i < 6; i++)
 		{
 			for (j = 0; j < 6; j++) printf("%.3f ", h_C[i + j * 6]);
 			printf("\n");
 		}
 		printf("b[%d]:\n", iteration + 1);
-		for (i = 0; i < 6; i++) printf("%.3f\n", h_b[i]);
+		for (i = 0; i < 6; i++) printf("%.3f\n", h_b[i]);*/
 
 		//Allocate the buffer
 		cusolverDnSpotrf_bufferSize(cusolverH, CUBLAS_FILL_MODE_UPPER, 6, d_C, 6, &Lwork);
@@ -573,7 +578,7 @@ int main(void)
 		//Find the triangular Cholesky factor
 		cusolverDnSpotrf(cusolverH, CUBLAS_FILL_MODE_UPPER, 6, d_C, 6, d_work, Lwork, devInfo);
 		//solve the system of linear equations
-		cusolverDnSpotrs(cusolverH, CUBLAS_FILL_MODE_UPPER, 6, 1, d_C, 6, d_b, 1, devInfo);//d_b holds the answer
+		cusolverDnSpotrs(cusolverH, CUBLAS_FILL_MODE_UPPER, 6, 1, d_C, 6, d_b, 6, devInfo);//d_b holds the answer
 		cudaMemcpy(h_b, d_b, 6 * sizeof(float), cudaMemcpyDeviceToHost);//move b to the CPU
 
 		//rotation matrix
@@ -586,6 +591,11 @@ int main(void)
 		h_temp_T[0] = h_b[3];
 		h_temp_T[1] = h_b[4];
 		h_temp_T[2] = h_b[5];
+
+		/*printf("R:\n");
+		printScloud(h_temp_r, 3, 3);
+		printf("T:\n");
+		printSarray(h_temp_T, 3);*/
 
 		cudaMemcpy(d_temp_r, h_temp_r, 9 * sizeof(float), cudaMemcpyHostToDevice);//move temp_r to the GPU
 		cudaMemcpy(d_temp_T, h_temp_T, 3 * sizeof(float), cudaMemcpyHostToDevice);//move temp_T to the GPU
@@ -632,29 +642,33 @@ int main(void)
 
 	//Destroy handles
 	cublasDestroy(cublasH);
-	cusolverDnDestroy(cusolverH);
+	//cusolverDnDestroy(cusolverH);
 
 	//Free memory
-	free(h_normals), cudaFree(d_normals);
+	cudaFree(d_normals);
 
 	free(h_D), free(h_M);
 	cudaFree(d_p), cudaFree(d_q);
 
-	free(h_idx), cudaFree(d_idx);
+	free(h_idx);
+	cudaFree(d_idx);
 
-	free(h_q_idx), cudaFree(d_q_idx);
+	free(h_q_idx);
+	cudaFree(d_q_idx);
 
 	free(h_C), free(h_b);
 	cudaFree(d_C), cudaFree(d_b), cudaFree(d_C_total), cudaFree(d_b_total), cudaFree(d_cn);
 
 	cudaFree(d_work), cudaFree(devInfo);
 
-	free(h_unit), cudaFree(d_unit);
+	free(h_unit);
+	cudaFree(d_unit);
 
 	free(h_temp_r), free(h_temp_T);
 	cudaFree(d_temp_r), cudaFree(d_temp_T);
 
-	free(h_error), cudaFree(d_aux);
+	free(h_error);
+	cudaFree(d_aux);
 
 	return 0;
 }
