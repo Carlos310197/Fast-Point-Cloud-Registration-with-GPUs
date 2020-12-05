@@ -17,7 +17,7 @@
 //#include <device_functions.h>
 
 //constants
-#define WIDTH 32
+#define WIDTH 128
 #define NUM_POINTS WIDTH*WIDTH //width of grid (1024 points)
 #define XY_min -2.0
 #define XY_max 2.0
@@ -35,11 +35,19 @@ void Matching(float* P, float* Q, int q_points, int* idx)
 
 	float min = 100000;
 	float d;
+
+	//float xp = P[0 + i * 3]; (Load P on register)
+	//use intrinsics for power of 2: zpowf
+	//we do not need the sqrt
+	//check the if divergence in PTX
+	//point data xyz must be a power of 2 ..... xyz0
+	//loop unroll divided by 2,4,8,16,...
+
 	for (int j = 0; j < q_points; j++)
 	{
-		d = (float)sqrt((P[0 + i * 3] - Q[0 + j * 3]) * (P[0 + i * 3] - Q[0 + j * 3]) +
+		d = (P[0 + i * 3] - Q[0 + j * 3]) * (P[0 + i * 3] - Q[0 + j * 3]) +
 			(P[1 + i * 3] - Q[1 + j * 3]) * (P[1 + i * 3] - Q[1 + j * 3]) +
-			(P[2 + i * 3] - Q[2 + j * 3]) * (P[2 + i * 3] - Q[2 + j * 3]));
+			(P[2 + i * 3] - Q[2 + j * 3]) * (P[2 + i * 3] - Q[2 + j * 3]);
 		if (d < min)
 		{
 			min = d;
@@ -277,7 +285,7 @@ int main()
 	float partial_error = 0;
 
 	//printf("Here starts the main loop!\n");
-	int GridSize = 8;
+	int GridSize = 16;
 	int BlockSize = NUM_POINTS / GridSize;
 	printf("Grid Size: %d, Block Size: %d\n", GridSize, BlockSize);
 
