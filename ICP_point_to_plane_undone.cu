@@ -46,15 +46,15 @@ int minimum(float* d, int n)
 //idx has to allocate mxn values
 //d has to allocate mxn values
 __global__
-void knn(float* Dt, int n, float* M, int m, int* idx, int k, float* d)
+void knn(float* P, int n, float* Q, int m, int* idx, int k, float* d)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
 	int j;
-	//int s;
-	//float key = 0.0f;
 
 	for (j = 0; j < m; j++)
-		d[j + i * m] = (float)sqrt(pow((Dt[0 + i * 3] - M[0 + j * 3]), 2) + pow((Dt[1 + i * 3] - M[1 + j * 3]), 2) + pow((Dt[2 + i * 3] - M[2 + j * 3]), 2));
+		d[j + i * m] = (float)sqrt((P[0 + i * 3] - Q[0 + j * 3]) * (P[0 + i * 3] - Q[0 + j * 3]) +
+									(P[1 + i * 3] - Q[1 + j * 3]) * (P[1 + i * 3] - Q[1 + j * 3]) +
+									(P[2 + i * 3] - Q[2 + j * 3]) * (P[2 + i * 3] - Q[2 + j * 3]));
 
 	__syncthreads();
 
@@ -194,38 +194,43 @@ __global__
 void Cxb(float* p, float* q, int* idx, float* normals, float* cn, float* C_total, float* b_total)
 {
 	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	//int stride = idx[i];
-	cn[0 + i * 6] = p[1 + i * 3] * normals[2 + idx[i] * 3] -
-		p[2 + i * 3] * normals[1 + idx[i] * 3];//cix
-	cn[1 + i * 6] = p[2 + i * 3] * normals[0 + idx[i] * 3] -
-		p[0 + i * 3] * normals[2 + idx[i] * 3];//ciy
-	cn[2 + i * 6] = p[0 + i * 3] * normals[1 + idx[i] * 3] -
-		p[1 + i * 3] * normals[0 + idx[i] * 3];//ciz
-	cn[3 + i * 6] = normals[0 + idx[i] * 3];//nix
-	cn[4 + i * 6] = normals[1 + idx[i] * 3];//niy
-	cn[5 + i * 6] = normals[2 + idx[i] * 3];//niz
+	float cix, ciy, ciz;
+	float nix, niy, niz;
 
-	C_total[0 + i * 36] = cn[0 + i * 6] * cn[0 + i * 6]; C_total[6 + i * 36] = cn[0 + i * 6] * cn[1 + i * 6]; C_total[12 + i * 36] = cn[0 + i * 6] * cn[2 + i * 6];
-	C_total[18 + i * 36] = cn[0 + i * 6] * cn[3 + i * 6]; C_total[24 + i * 36] = cn[0 + i * 6] * cn[4 + i * 6]; C_total[30 + i * 36] = cn[0 + i * 6] * cn[5 + i * 6];
+	cix = p[1 + i * 3] * normals[2 + idx[i] * 3] -
+		  p[2 + i * 3] * normals[1 + idx[i] * 3];//cix
+	ciy = p[2 + i * 3] * normals[0 + idx[i] * 3] -
+		  p[0 + i * 3] * normals[2 + idx[i] * 3];//ciy
+	ciz = p[0 + i * 3] * normals[1 + idx[i] * 3] -
+		  p[1 + i * 3] * normals[0 + idx[i] * 3];//ciz++
 
-	C_total[7 + i * 36] = cn[1 + i * 6] * cn[1 + i * 6]; C_total[13 + i * 36] = cn[1 + i * 6] * cn[2 + i * 6]; C_total[19 + i * 36] = cn[1 + i * 6] * cn[3 + i * 6];
-	C_total[25 + i * 36] = cn[1 + i * 6] * cn[4 + i * 6]; C_total[31 + i * 36] = cn[1 + i * 6] * cn[5 + i * 6];
+	/*printf("cix[%d] = %.4f\n", i + 1, cix);
+	printf("ciy[%d] = %.4f\n", i + 1, ciy);
+	printf("ciz[%d] = %.4f\n", i + 1, ciz);*/
 
-	C_total[14 + i * 36] = cn[2 + i * 6] * cn[2 + i * 6]; C_total[20 + i * 36] = cn[2 + i * 6] * cn[3 + i * 6]; C_total[26 + i * 36] = cn[2 + i * 6] * cn[4 + i * 6];
-	C_total[32 + i * 36] = cn[2 + i * 6] * cn[5 + i * 6];
+	nix = normals[0 + idx[i] * 3];//nix
+	niy = normals[1 + idx[i] * 3];//niy
+	niz = normals[2 + idx[i] * 3];//niz
 
-	C_total[21 + i * 36] = cn[3 + i * 6] * cn[3 + i * 6]; C_total[27 + i * 36] = cn[3 + i * 6] * cn[4 + i * 6]; C_total[33 + i * 36] = cn[3 + i * 6] * cn[5 + i * 6];
+	C_total[0 + i * 36] = cix * cix; C_total[6 + i * 36] = cix * ciy; C_total[12 + i * 36] = cix * ciz;
+	C_total[18 + i * 36] = cix * nix; C_total[24 + i * 36] = cix * niy; C_total[30 + i * 36] = cix * niz;
 
-	C_total[28 + i * 36] = cn[4 + i * 6] * cn[4 + i * 6]; C_total[34 + i * 36] = cn[4 + i * 6] * cn[5 + i * 6];
+	C_total[7 + i * 36] = ciy * ciy; C_total[13 + i * 36] = ciy * ciz; C_total[19 + i * 36] = ciy * nix;
+	C_total[25 + i * 36] = ciy * niy; C_total[31 + i * 36] = ciy * niz;
 
-	C_total[35 + i * 36] = cn[5 + i * 6] * cn[5 + i * 6];
+	C_total[14 + i * 36] = ciz * ciz; C_total[20 + i * 36] = ciz * nix; C_total[26 + i * 36] = ciz * niy;
+	C_total[32 + i * 36] = ciz * niz;
 
-	float aux = (p[0 + i * 3] - q[0 + i * 3]) * cn[3 + i * 6] +
-		(p[1 + i * 3] - q[1 + i * 3]) * cn[4 + i * 6] +
-		(p[2 + i * 3] - q[2 + i * 3]) * cn[5 + i * 6];
+	C_total[21 + i * 36] = nix * nix; C_total[27 + i * 36] = nix * niy; C_total[33 + i * 36] = nix * niz;
 
-	b_total[0 + i * 6] = -cn[0 + i * 6] * aux; b_total[1 + i * 6] = -cn[1 + i * 6] * aux; b_total[2 + i * 6] = -cn[2 + i * 6] * aux;
-	b_total[3 + i * 6] = -cn[3 + i * 6] * aux; b_total[4 + i * 6] = -cn[4 + i * 6] * aux; b_total[5 + i * 6] = -cn[5 + i * 6] * aux;
+	C_total[28 + i * 36] = niy * niy; C_total[34 + i * 36] = niy * niz;
+
+	C_total[35 + i * 36] = niz * niz;
+
+	float aux = (p[0 + i * 3] - q[0 + i * 3]) * nix + (p[1 + i * 3] - q[1 + i * 3]) * niy + (p[2 + i * 3] - q[2 + i * 3]) * niz;
+
+	b_total[0 + i * 6] = -cix * aux; b_total[1 + i * 6] = -ciy * aux; b_total[2 + i * 6] = -ciz * aux;
+	b_total[3 + i * 6] = -nix * aux; b_total[4 + i * 6] = -niy * aux; b_total[5 + i * 6] = -niz * aux;
 }
 
 __global__
@@ -579,9 +584,9 @@ int main(void)
 		//rotation matrix
 		cx = (float)cos(h_b[0]); cy = (float)cos(h_b[1]); cz = (float)cos(h_b[2]);
 		sx = (float)sin(h_b[0]); sy = (float)sin(h_b[1]); sz = (float)sin(h_b[2]);
-		h_temp_r[0] = cy * cz; h_temp_r[3] = cz * sx * sy - cx * sz;  h_temp_r[6] = cx * cz * sy + sx * sz;
-		h_temp_r[1] = cy * sz; h_temp_r[4] = cx * cz + sx * sy * sz; h_temp_r[7] = cx * sy * sz - cz * sx;
-		h_temp_r[2] = -sy; h_temp_r[5] = cy * sx; h_temp_r[8] = cx * cy;
+		h_temp_r[0] = cy * cz; h_temp_r[1] = cz * sx * sy - cx * sz;  h_temp_r[2] = cx * cz * sy + sx * sz;
+		h_temp_r[3] = cy * sz; h_temp_r[4] = cx * cz + sx * sy * sz; h_temp_r[5] = cx * sy * sz - cz * sx;
+		h_temp_r[6] = -sy; h_temp_r[7] = cy * sx; h_temp_r[8] = cx * cy;
 		//translation vector
 		h_temp_T[0] = h_b[3];
 		h_temp_T[1] = h_b[4];
@@ -632,29 +637,33 @@ int main(void)
 
 	//Destroy handles
 	cublasDestroy(cublasH);
-	cusolverDnDestroy(cusolverH);
+	//cusolverDnDestroy(cusolverH);
 
 	//Free memory
-	free(h_normals), cudaFree(d_normals);
+	cudaFree(d_normals);
 
 	free(h_D), free(h_M);
 	cudaFree(d_p), cudaFree(d_q);
 
-	free(h_idx), cudaFree(d_idx);
+	free(h_idx);
+	cudaFree(d_idx);
 
-	free(h_q_idx), cudaFree(d_q_idx);
+	free(h_q_idx);
+	cudaFree(d_q_idx);
 
 	free(h_C), free(h_b);
 	cudaFree(d_C), cudaFree(d_b), cudaFree(d_C_total), cudaFree(d_b_total), cudaFree(d_cn);
 
 	cudaFree(d_work), cudaFree(devInfo);
 
-	free(h_unit), cudaFree(d_unit);
+	free(h_unit);
+	cudaFree(d_unit);
 
 	free(h_temp_r), free(h_temp_T);
 	cudaFree(d_temp_r), cudaFree(d_temp_T);
 
-	free(h_error), cudaFree(d_aux);
+	free(h_error);
+	cudaFree(d_aux);
 
 	return 0;
 }
