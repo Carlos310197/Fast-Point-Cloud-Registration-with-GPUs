@@ -1,4 +1,4 @@
-#include "my_lib.h"
+#include <stdio.h>
 
 //all of these functions operate with colum-major order matrices
 

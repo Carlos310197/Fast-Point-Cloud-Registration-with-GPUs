@@ -7,5 +7,5 @@ void print_cloud(double* cloud, int num_points, int points2show);
 void print_darray(double* array, int points2show);
 void print_iarray(int* array, int points2show);
 
-#include  "my_lib.c"
+#include  "my_lib.cpp"
 #endif

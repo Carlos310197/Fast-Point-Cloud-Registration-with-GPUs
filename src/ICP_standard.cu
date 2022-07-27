@@ -12,7 +12,7 @@
 #include <cublas_v2.h>
 #include <curand.h>
 #include <cusolverDn.h>
-#include "/home/carlos/Desktop/ICP/my_libraries/my_lib.h"
+#include "my_lib.h"
 
 //constants
 #define WIDTH 12
@@ -428,8 +428,8 @@ int main(void)
 	cublasDestroy(handle);
 
 	cudaMemcpy(h_error, d_error, MAX_ITER*sizeof(double), cudaMemcpyDeviceToHost);
-	printf("Error:\n");
-	print_darray(h_error,iterations);
+	// printf("Error:\n");
+	// print_darray(h_error,iterations);
 
 	printf("Elapsed time: %f ms\n",milliseconds);
 
@@ -457,5 +457,5 @@ int main(void)
 	cudaFree(d_error);
 	cudaFree(d_aux);
 
-    return 1;
+    return 0;
 }
