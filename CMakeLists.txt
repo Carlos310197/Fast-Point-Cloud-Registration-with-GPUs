@@ -23,19 +23,6 @@ set_target_properties(icp_lib
                       PROPERTIES CUDA_SEPARABLE_COMPILATION ON
                       )
 
-if(BUILD_TESTING)
-
-  add_executable(icp_test src/ICP_standard.cu)
-
-  set_target_properties(icp_test PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
-  target_link_libraries(icp_test PRIVATE icp_lib -lcublas -lcurand -lcusolver)
-
-  add_test(NAME icp_test COMMAND icp_test)
-
-  if(APPLE)
-    # We need to add the default path to the driver (libcuda.dylib) as an rpath,
-    # so that the static cuda runtime can find it at runtime.
-    set_property(TARGET icp_test PROPERTY BUILD_RPATH ${CMAKE_CUDA_IMPLICIT_LINK_DIRECTORIES})
-  endif()
-
-endif()
+add_executable(icp_test src/ICP_standard.cu)
+set_target_properties(icp_test PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+target_link_libraries(icp_test PRIVATE icp_lib -lcublas -lcurand -lcusolver)
