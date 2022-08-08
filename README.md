@@ -16,13 +16,13 @@ make
 3 datasets were used for testing the algorithm:
 
 ### Synthetic Data: Given by the function $z=x^2-y^2$
-![Syntethic Point Cloud](/images/synthetic_data.jpg | width=20)
+![Syntethic Point Cloud](/images/synthetic_data.jpg)
 
 ### Stanford Bunny Dataset:
-![Bunny Point Cloud](/images/bunny_data.jpg | width=20)
+![Bunny Point Cloud](/images/bunny_data.jpg)
 
 ### Real Point Cloud of a hall:
-![Real Point Cloud data](/images/hall_data.jpg | width=20)
+![Real Point Cloud data](/images/hall_data.jpg)
 
 # Results
 
