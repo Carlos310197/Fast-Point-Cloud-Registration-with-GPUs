@@ -26,7 +26,8 @@ make
 # Results
 
 Time Complexity of serial and parallelized ICP algorithm
-![Time Complexity](/images/matching_optimization.pdf)
+<!-- ![Time Complexity](/images/matching_optimization.pdf) -->
+xfun::embed_file("/images/matching_optimization.pdf")
 
 Optimization of the matching step using the GPU
 ![Matching Optimization](/images/matching_optimization.pdf)
